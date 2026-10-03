@@ -44,6 +44,15 @@ button:disabled{opacity:.5}
 .pp input{width:22px;height:22px}
 .pp .nm{font-size:18px;font-weight:bold}
 .big2{font-size:22px;font-weight:bold}
+.frow{display:flex;gap:8px;align-items:center}
+.frow input,.frow select{flex:1;min-width:0}
+.frow .ed{width:auto;margin:0;padding:12px 14px;font-size:15px;background:#fff;color:#1b5e20;border:1px solid #1b5e20;flex:none}
+.locked{border-color:transparent!important;background:#f1f5f1!important;color:#222!important;-webkit-text-fill-color:#222;opacity:1;font-weight:bold}
+.fr.miss input,.fr.miss select{border:2px solid #c62828!important;background:#fff5f5!important}
+.ppw{margin-top:8px}
+.ppw .pp{margin-top:0}
+.ppe{width:auto!important;margin:6px 0 0!important;padding:8px 14px!important;font-size:14px!important;background:#fff!important;color:#1b5e20!important;border:1px solid #1b5e20!important}
+.edbox{border:1px solid #ccc;border-radius:10px;padding:10px;margin-top:6px;background:#fafafa}
 </style>
 </head>
 <body>
@@ -105,8 +114,18 @@ button:disabled{opacity:.5}
   <div class="prog" id="pProg"></div>
   <input type="file" id="fFile" accept="image/*" capture="environment" class="hidden">
   <button id="bShot">여권 촬영 / 사진 선택</button>
-  <button id="bManual" class="sec">사진 없이 직접 입력</button>
+  <div class="note">여권 사진면 전체가 나오게, 빛 반사 없이 찍어 주세요.</div>
   <div id="pOcr" class="note"></div>
+ </div>
+ <div id="pForm" class="card hidden">
+  <b>인식 결과 확인</b>
+  <div class="note">틀린 곳은 "수정"을 눌러 고치세요. 빨간 칸은 인식하지 못한 칸입니다.</div>
+  <div class="fr" id="r_pKo"><label>한글 이름</label><div class="frow"><input type="text" id="pKo" autocomplete="off"><button class="ed" data-f="pKo">수정</button></div></div>
+  <div class="fr" id="r_pEn"><label>영문 이름</label><div class="frow"><input type="text" id="pEn" autocapitalize="characters" autocomplete="off"><button class="ed" data-f="pEn">수정</button></div></div>
+  <div class="fr" id="r_pNo"><label>여권번호</label><div class="frow"><input type="text" id="pNo" autocapitalize="characters" autocomplete="off"><button class="ed" data-f="pNo">수정</button></div></div>
+  <div id="pCheck" class="note err"></div>
+  <div class="fr" id="r_pSex"><label>성별</label><div class="frow"><select id="pSex"><option value="">선택</option><option value="M">남 (M)</option><option value="F">여 (F)</option></select><button class="ed" data-f="pSex">수정</button></div></div>
+  <div class="fr" id="r_pDob"><label>생년월일</label><div class="frow"><input type="date" id="pDob"><button class="ed" data-f="pDob">수정</button></div></div>
  </div>
  <div id="pCrop" class="card hidden">
   <b>얼굴 사진 영역 맞추기</b>
@@ -115,23 +134,11 @@ button:disabled{opacity:.5}
   <input type="range" id="cropSize" min="10" max="60" value="28" style="width:100%;margin-top:10px">
   <div class="row"><img id="facePrev" alt=""><div class="note">저장될 얼굴 미리보기</div></div>
  </div>
- <div id="pForm" class="card hidden">
-  <label>한글 이름</label>
-  <input type="text" id="pKo" autocomplete="off">
-  <label>영문 이름</label>
-  <input type="text" id="pEn" autocapitalize="characters" autocomplete="off">
-  <label>여권번호</label>
-  <input type="text" id="pNo" autocapitalize="characters" autocomplete="off">
-  <div id="pCheck" class="note"></div>
-  <label>성별</label>
-  <select id="pSex"><option value="">선택</option><option value="M">남 (M)</option><option value="F">여 (F)</option></select>
-  <label>생년월일</label>
-  <input type="date" id="pDob">
-  <button id="bCancel" class="sec">접수 전체 취소</button>
- </div>
+ <div id="pCropOld" class="card hidden"><div class="row"><img id="oldFace" style="width:90px;height:120px;object-fit:cover;border-radius:6px" alt=""><div class="note">저장된 얼굴 사진. 바꾸려면 위에서 다시 촬영하세요.</div></div></div>
+ <button id="bCancel" class="sec">접수 전체 취소</button>
  <div id="pBar" class="bar hidden">
   <div id="ePerson" class="err"></div>
-  <button id="bSave">여권 정보 저장</button>
+  <button id="bSave">확인 완료, 다음</button>
  </div>
 </section>
 
@@ -143,6 +150,7 @@ button:disabled{opacity:.5}
   <label>이 분의 연락처 (카톡 번호)</label>
   <input type="tel" id="cPhone" placeholder="010-0000-0000">
   <div class="note">없으면 비워두고 "연락처 없음"을 누르세요.</div>
+  <button id="bBackEdit" class="sec">← 여권 정보 다시 수정</button>
  </div>
  <div class="bar">
   <button id="bContactSave">연락처 저장하고 다음</button>
@@ -154,7 +162,7 @@ button:disabled{opacity:.5}
 <section id="vFinal" class="hidden">
  <div class="card">
   <b>대표 예약자 선택</b>
-  <div class="note">아래 일행 중 대표 예약자를 눌러 선택하세요.</div>
+  <div class="note">아래 일행 중 대표 예약자를 눌러 선택하세요. 오타가 있으면 각 사람의 "수정"을 누르세요.</div>
   <div id="fList"></div>
   <label style="margin-top:16px">대표자 연락처 (카톡 번호)</label>
   <input type="tel" id="fRepPhone" placeholder="010-0000-0000">
@@ -248,30 +256,41 @@ $("bCancel").onclick=cancelGroup;$("bFinalCancel").onclick=cancelGroup;
 $("bAgain").onclick=home;
 
 /* ---------- 개인 여권 입력 ---------- */
-const srcCanvas=$("srcCanvas");let shotAt=null,hasPhoto=false,ocrToken=0;
+const srcCanvas=$("srcCanvas");let shotAt=null,hasPhoto=false,ocrToken=0,ocrBusy=false,keepPhoto="",editId=null;
 const FIELDS=["pKo","pEn","pNo","pSex","pDob"];
-FIELDS.forEach(id=>$(id).addEventListener("input",()=>$(id).dataset.touched="1"));
+FIELDS.forEach(id=>{const el=$(id);el.addEventListener("input",()=>{el.dataset.touched="1";markMiss(id)});el.addEventListener("change",()=>{el.dataset.touched="1";markMiss(id)})});
+function markMiss(id){$("r_"+id).classList.toggle("miss",!$(id).value.trim())}
+function setLock(id,lock){const el=$(id),b=document.querySelector(`.ed[data-f="${id}"]`);
+ if(lock&&!el.value.trim())lock=false;
+ el.readOnly=lock;if(el.tagName==="SELECT"||el.type==="date")el.disabled=lock;
+ el.classList.toggle("locked",lock);b.textContent=lock?"수정":"완료";b.classList.toggle("hidden",!lock&&!el.value.trim()&&!el.dataset.touched);markMiss(id)}
+function lockAll(){FIELDS.forEach(id=>setLock(id,true))}
+document.querySelectorAll(".ed").forEach(b=>b.onclick=()=>{const id=b.dataset.f,el=$(id);
+ if(el.readOnly||el.disabled){setLock(id,false);el.dataset.touched="1";b.classList.remove("hidden");el.focus();if(el.showPicker&&el.tagName==="SELECT")try{el.showPicker()}catch(e){}}
+ else setLock(id,true)});
 function autoSet(id,v){if(v&&$(id).dataset.touched!=="1")$(id).value=v}
+function setBusy(b){ocrBusy=b;$("bSave").disabled=b;$("bSave").textContent=b?"인식 중... 잠시만 기다려 주세요":"확인 완료, 다음"}
 function startPerson(){
- ocrToken++;
+ ocrToken++;setBusy(false);editId=null;keepPhoto="";
  show("vPerson");
  $("pProg").textContent=`${group.persons.length+1}/${group.total}번째 여권`;
- ["pCrop","pForm","pBar"].forEach(x=>$(x).classList.add("hidden"));
- FIELDS.forEach(id=>{$(id).value="";delete $(id).dataset.touched});
+ ["pCrop","pForm","pBar","pCropOld"].forEach(x=>$(x).classList.add("hidden"));
+ FIELDS.forEach(id=>{$(id).value="";delete $(id).dataset.touched;setLock(id,false)});
  $("pOcr").textContent="";$("pCheck").textContent="";$("ePerson").textContent="";
- hasPhoto=false;shotAt=null;$("fFile").value="";
+ hasPhoto=false;shotAt=null;$("fFile").value="";$("bShot").textContent="여권 촬영 / 사진 선택";
 }
 $("bShot").onclick=()=>$("fFile").click();
-$("bManual").onclick=()=>{$("pForm").classList.remove("hidden");$("pBar").classList.remove("hidden");shotAt=shotAt||new Date()};
 $("fFile").onchange=async e=>{
  const f=e.target.files[0];if(!f)return;
- shotAt=new Date();
+ shotAt=new Date();keepPhoto="";$("pCropOld").classList.add("hidden");
+ FIELDS.forEach(id=>{delete $(id).dataset.touched});
  $("pOcr").textContent="사진 처리 중...";
  const bmp=await createImageBitmap(f,{imageOrientation:"from-image"}).catch(()=>createImageBitmap(f));
  const sc=Math.min(1,1800/bmp.width);
  srcCanvas.width=Math.round(bmp.width*sc);srcCanvas.height=Math.round(bmp.height*sc);
  srcCanvas.getContext("2d").drawImage(bmp,0,0,srcCanvas.width,srcCanvas.height);
- hasPhoto=true;
+ hasPhoto=true;$("bShot").textContent="다시 촬영";
+ FIELDS.forEach(id=>{$(id).value="";setLock(id,true)});
  ["pCrop","pForm","pBar"].forEach(x=>$(x).classList.remove("hidden"));
  await autoCrop();
  runOCR(++ocrToken);
@@ -340,7 +359,7 @@ const KO_LBL=/대한|민국|여권|성명|국적|생년|월일|성별|발급|발
 const EN_LBL=new Set(["REPUBLIC","OF","KOREA","KOREAN","PASSPORT","TYPE","COUNTRY","CODE","NO","SURNAME","GIVEN","NAME","NAMES","NATIONALITY","DATE","BIRTH","SEX","ISSUE","EXPIRY","AUTHORITY","MINISTRY","FOREIGN","AFFAIRS","KOR","PM","PERSONAL","SIGNATURE","BEARER","THE","AND"]);
 const MONTHS=new Set(["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"]);
 const ALL_ROMS=new Set(Object.values(SURN).flat());
-function upTokens(l){return(l.match(/\b[A-Z]{2,}\b/g)||[]).filter(w=>!EN_LBL.has(w)&&!MONTHS.has(w))}
+function upTokens(l){return(l.match(/\b[A-Z]{2,}\b/g)||[]).filter(w=>!EN_LBL.has(w)&&!MONTHS.has(w)&&/[AEIOUWY]/.test(w)&&!/[^AEIOUWY]{4,}/.test(w))}
 function fixSur(raw){ // MRZ 성 보정: 뒤에 붙은 오인식 문자 제거
  if(!raw)return"";if(ALL_ROMS.has(raw))return raw;
  let best="";for(const r of ALL_ROMS)if(raw.startsWith(r)&&r.length>best.length)best=r;return best||raw;
@@ -386,7 +405,10 @@ function region(y0,y1,maxW,filter){
  const g=c.getContext("2d");g.filter=filter;g.drawImage(srcCanvas,0,sy,W,sh,0,0,c.width,c.height);return c;
 }
 async function runOCR(tok){
- if(!window.Tesseract){$("pOcr").textContent="자동 인식 엔진을 불러오지 못했습니다(인터넷 필요). 직접 입력해 주세요.";return}
+ if(!window.Tesseract){$("pOcr").textContent="자동 인식 엔진을 불러오지 못했습니다(인터넷 필요). 빨간 칸을 직접 입력해 주세요.";lockAll();return}
+ setBusy(true);try{await runOCR2(tok)}finally{if(tok===ocrToken){setBusy(false);lockAll()}}
+}
+async function runOCR2(tok){
  const msg=[];const say=()=>{if(tok===ocrToken)$("pOcr").innerHTML=msg.join("<br>")};
  let mrz=null;
  try{
@@ -397,7 +419,7 @@ async function runOCR(tok){
    const p=parseMRZ(r.data.text);if(p&&(!mrz||p.okNo))mrz=p;if(mrz&&mrz.okNo)break;
   }
   if(tok!==ocrToken)return;
-  if(mrz){autoSet("pNo",mrz.no);autoSet("pSex",mrz.sex);autoSet("pDob",mrz.dob);
+  if(mrz){autoSet("pNo",mrz.no);autoSet("pSex",mrz.sex);autoSet("pDob",mrz.dob);["pNo","pSex","pDob"].forEach(id=>setLock(id,true));
    msg[0]=mrz.okNo?'<span class="ok">① 여권번호·성별·생년월일 인식 완료</span>':'<span class="err">① 여권번호 검증 실패, 꼭 확인하세요</span>';
    $("pCheck").textContent=mrz.okDob?"":"생년월일 검증 실패 가능성 있음, 확인하세요.";
   }else msg[0]='<span class="err">① 하단 코드를 읽지 못했습니다. 다시 촬영하거나 직접 입력하세요.</span>';
@@ -409,21 +431,36 @@ async function runOCR(tok){
   const r=await w.recognize(region(0,0.8,1600,"grayscale(1) contrast(1.4)"));
   if(tok!==ocrToken)return;
   const n=parseNames(r.data.text,mrz&&mrz.sur);
-  autoSet("pKo",n.ko);autoSet("pEn",n.en);
-  msg[1]=(n.ko&&n.en)?'<span class="ok">② 이름 인식 완료. 확인하세요.</span>':'<span class="err">② 이름 일부를 못 읽었습니다. 빈 칸은 직접 입력하세요.</span>';
+  autoSet("pKo",n.ko);autoSet("pEn",n.en);setLock("pKo",true);setLock("pEn",true);
+  msg[1]=(n.ko&&n.en)?'<span class="ok">② 이름 인식 완료. 확인하세요.</span>':'<span class="err">② 이름 일부를 못 읽었습니다. 빨간 칸을 직접 입력하세요.</span>';
  }catch(e){msg[1]="② 이름 인식 실패. 직접 입력하세요."}
  say();
 }
 
 /* 여권 정보 저장 -> 연락처 화면 */
 $("bSave").onclick=async()=>{
- const p={id:uid(),photo:hasPhoto?cropData():"",nameKo:$("pKo").value.trim(),nameEn:$("pEn").value.trim().toUpperCase(),
-  passNo:$("pNo").value.trim().toUpperCase(),sex:$("pSex").value,dob:$("pDob").value,shotAt:(shotAt||new Date()).toISOString()};
+ if(ocrBusy)return;
+ const p={id:editId||uid(),photo:hasPhoto?cropData():keepPhoto,nameKo:$("pKo").value.trim(),nameEn:$("pEn").value.trim().toUpperCase().replace(/\s+/g," "),
+  passNo:$("pNo").value.trim().toUpperCase().replace(/\s/g,""),sex:$("pSex").value,dob:$("pDob").value,shotAt:(shotAt||new Date()).toISOString(),phone:editPhone};
+ if(!p.photo&&!hasPhoto)return $("ePerson").textContent="여권을 먼저 촬영하세요.";
  if(!p.nameKo&&!p.nameEn)return $("ePerson").textContent="이름(한글 또는 영문)을 입력하세요.";
  if(!p.passNo)return $("ePerson").textContent="여권번호를 입력하세요.";
  ocrToken++;
- group.persons.push(p);await draftPut(group);
+ if(p.phone===undefined)delete p.phone;
+ group.persons.push(p);await draftPut(group);editPhone=undefined;
  showContact();
+};
+let editPhone;
+$("bBackEdit").onclick=async()=>{
+ const p=group.persons.pop();await draftPut(group);
+ show("vPerson");editId=p.id;editPhone=p.phone;shotAt=new Date(p.shotAt);
+ $("pProg").textContent=`${group.persons.length+1}/${group.total}번째 여권 (수정)`;
+ $("pKo").value=p.nameKo;$("pEn").value=p.nameEn;$("pNo").value=p.passNo;$("pSex").value=p.sex;$("pDob").value=p.dob;
+ FIELDS.forEach(id=>$(id).dataset.touched="1");lockAll();
+ $("pOcr").textContent="";$("pCheck").textContent="";$("ePerson").textContent="";
+ $("pForm").classList.remove("hidden");$("pBar").classList.remove("hidden");
+ if(hasPhoto&&srcCanvas.width){$("pCrop").classList.remove("hidden");$("pCropOld").classList.add("hidden");requestAnimationFrame(layoutBox)}
+ else{hasPhoto=false;keepPhoto=p.photo;$("pCrop").classList.add("hidden");if(p.photo){$("oldFace").src=p.photo;$("pCropOld").classList.remove("hidden")}}
 };
 
 /* ---------- 개인 연락처 ---------- */
@@ -445,13 +482,30 @@ $("bContactSkip").onclick=()=>contactDone("");
 /* ---------- 마지막: 대표 예약자 ---------- */
 let repIdx=-1,repAuto="";
 function showFinal(){
- show("vFinal");repIdx=-1;repAuto="";$("fRepPhone").value="";$("eFinal").textContent="";
- $("fList").innerHTML=group.persons.map((p,i)=>`<label class="pp" data-i="${i}"><input type="radio" name="rep" value="${i}">${p.photo?`<img src="${p.photo}" alt="">`:`<div style="width:48px;height:64px;background:#eee;border-radius:4px"></div>`}<div><div class="nm">${esc(p.nameKo||p.nameEn)}</div><div class="note">${esc(p.nameEn)} · ${esc(p.phone||"연락처 없음")}</div></div></label>`).join("");
+ show("vFinal");repIdx=-1;repAuto="";$("fRepPhone").value="";$("eFinal").textContent="";renderFinal();
+}
+function renderFinal(){
+ $("fList").innerHTML=group.persons.map((p,i)=>`<div class="ppw"><label class="pp${i===repIdx?" sel":""}" data-i="${i}"><input type="radio" name="rep" value="${i}"${i===repIdx?" checked":""}>${p.photo?`<img src="${p.photo}" alt="">`:`<div style="width:48px;height:64px;background:#eee;border-radius:4px"></div>`}<div><div class="nm">${esc(p.nameKo||p.nameEn)}</div><div class="note">${esc(p.nameEn)}<br>${esc(p.passNo)} · ${esc(p.sex)} · ${esc(p.dob)}<br>${esc(p.phone||"연락처 없음")}</div></div></label><button class="ppe" data-i="${i}">수정</button><div class="edbox hidden" id="ed${i}"></div></div>`).join("");
  document.querySelectorAll('input[name=rep]').forEach(r=>r.onchange=()=>{
   repIdx=+r.value;document.querySelectorAll(".pp").forEach(x=>x.classList.toggle("sel",+x.dataset.i===repIdx));
   const ph=group.persons[repIdx].phone||"";const cur=$("fRepPhone").value.trim();
   if(!cur||cur===repAuto){$("fRepPhone").value=ph;repAuto=ph}
  });
+ document.querySelectorAll(".ppe").forEach(b=>b.onclick=()=>openEdit(+b.dataset.i));
+}
+function openEdit(i){
+ const p=group.persons[i],box=$("ed"+i);
+ if(!box.classList.contains("hidden")){box.classList.add("hidden");return}
+ box.innerHTML=`<label>한글 이름</label><input type="text" id="e_ko" value="${esc(p.nameKo)}"><label>영문 이름</label><input type="text" id="e_en" autocapitalize="characters" value="${esc(p.nameEn)}"><label>여권번호</label><input type="text" id="e_no" autocapitalize="characters" value="${esc(p.passNo)}"><label>성별</label><select id="e_sex"><option value="">선택</option><option value="M">남 (M)</option><option value="F">여 (F)</option></select><label>생년월일</label><input type="date" id="e_dob" value="${esc(p.dob)}"><label>연락처</label><input type="tel" id="e_ph" value="${esc(p.phone||"")}"><button id="e_ok">수정 저장</button><button id="e_no2" class="sec">닫기</button>`;
+ box.classList.remove("hidden");$("e_sex").value=p.sex||"";
+ $("e_no2").onclick=()=>box.classList.add("hidden");
+ $("e_ok").onclick=async()=>{
+  const oldPh=p.phone||"";
+  Object.assign(p,{nameKo:$("e_ko").value.trim(),nameEn:$("e_en").value.trim().toUpperCase().replace(/\s+/g," "),passNo:$("e_no").value.trim().toUpperCase().replace(/\s/g,""),sex:$("e_sex").value,dob:$("e_dob").value,phone:$("e_ph").value.trim()});
+  await draftPut(group);
+  if(i===repIdx&&$("fRepPhone").value.trim()===oldPh){$("fRepPhone").value=p.phone;repAuto=p.phone}
+  renderFinal();
+ };
 }
 $("bUpload").onclick=async()=>{
  if(repIdx<0)return $("eFinal").textContent="대표 예약자를 선택하세요.";

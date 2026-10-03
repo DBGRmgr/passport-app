@@ -446,7 +446,7 @@ $("bContactSkip").onclick=()=>contactDone("");
 let repIdx=-1,repAuto="";
 function showFinal(){
  show("vFinal");repIdx=-1;repAuto="";$("fRepPhone").value="";$("eFinal").textContent="";
- $("fList").innerHTML=group.persons.map((p,i)=>`<label class="pp" data-i="${i}"><input type="radio" name="rep" value="${i}"><img src="${p.photo||""}" alt=""><div><div class="nm">${esc(p.nameKo||p.nameEn)}</div><div class="note">${esc(p.nameEn)} · ${esc(p.phone||"연락처 없음")}</div></div></label>`).join("");
+ $("fList").innerHTML=group.persons.map((p,i)=>`<label class="pp" data-i="${i}"><input type="radio" name="rep" value="${i}">${p.photo?`<img src="${p.photo}" alt="">`:`<div style="width:48px;height:64px;background:#eee;border-radius:4px"></div>`}<div><div class="nm">${esc(p.nameKo||p.nameEn)}</div><div class="note">${esc(p.nameEn)} · ${esc(p.phone||"연락처 없음")}</div></div></label>`).join("");
  document.querySelectorAll('input[name=rep]').forEach(r=>r.onchange=()=>{
   repIdx=+r.value;document.querySelectorAll(".pp").forEach(x=>x.classList.toggle("sel",+x.dataset.i===repIdx));
   const ph=group.persons[repIdx].phone||"";const cur=$("fRepPhone").value.trim();

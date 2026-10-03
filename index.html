@@ -32,7 +32,10 @@ button:disabled{opacity:.5}
 .note{font-size:13px;color:#777;margin-top:6px}
 .err{color:#b71c1c;font-size:14px}
 .ok{color:#1b5e20;font-size:14px}
-#cropWrap{position:relative;touch-action:none;user-select:none}
+#cropWrap{position:relative;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+#bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #ccc;padding:8px 14px calc(8px + env(safe-area-inset-bottom));z-index:9}
+#bar button{margin-top:0}
+main{padding-bottom:110px}
 #srcCanvas{width:100%;display:block;border-radius:8px}
 #cropBox{position:absolute;border:3px solid #ffeb3b;box-shadow:0 0 0 9999px #0006;touch-action:none}
 #facePrev{width:90px;height:120px;object-fit:cover;border-radius:6px;border:1px solid #aaa}
@@ -134,9 +137,12 @@ button:disabled{opacity:.5}
   <input type="tel" id="pPhone">
   <div class="chk"><input type="checkbox" id="pSame"><label for="pSame" style="margin:0;color:#222">대표자 번호와 동일</label></div>
   <div class="chk"><input type="checkbox" id="pConsent"><label for="pConsent" style="margin:0;color:#222">생일 축하 및 안내 메시지 수신에 동의함 (손님 확인)</label></div>
-  <button id="bSave">저장하고 다음</button>
   <button id="bCancel" class="sec">접수 취소</button>
+  <button id="bToTop" class="sec">위로 (사진 다시 보기)</button>
+ </div>
+ <div id="bar" class="hidden">
   <div id="ePerson" class="err"></div>
+  <button id="bSave">저장하고 다음</button>
  </div>
 </section>
 
@@ -209,7 +215,7 @@ function startPerson(){
  $("pRep").textContent=`대표 예약자: ${group.rep}  (그룹 ${group.id})`;
  ["pCrop","pForm"].forEach(x=>$(x).classList.add("hidden"));
  ["pKo","pEn","pNo","pPhone"].forEach(x=>$(x).value="");$("pSex").value="";$("pDob").value="";
- $("pSame").checked=false;$("pConsent").checked=false;$("pOcr").textContent="";$("pCheck").textContent="";$("ePerson").textContent="";
+ $("bar").classList.add("hidden");$("pSame").checked=false;$("pConsent").checked=false;$("pOcr").textContent="";$("pCheck").textContent="";$("ePerson").textContent="";
  hasPhoto=false;shotAt=null;$("fFile").value="";
 }
 $("bShot").onclick=()=>$("fFile").click();
@@ -224,7 +230,7 @@ $("fFile").onchange=async e=>{
  srcCanvas.width=Math.round(bmp.width*sc);srcCanvas.height=Math.round(bmp.height*sc);
  srcCanvas.getContext("2d").drawImage(bmp,0,0,srcCanvas.width,srcCanvas.height);
  hasPhoto=true;
- $("pCrop").classList.remove("hidden");$("pForm").classList.remove("hidden");
+ $("pCrop").classList.remove("hidden");$("pForm").classList.remove("hidden");$("bar").classList.remove("hidden");
  await autoCrop();
  await runOCR();
 };
@@ -268,17 +274,20 @@ function updatePrev(){if(hasPhoto)$("facePrev").src=cropData()}
 function cd(s){const w=[7,3,1];let t=0;for(let i=0;i<s.length;i++){const c=s[i];const v=c==="<"?0:/\d/.test(c)?+c:c.charCodeAt(0)-55;t+=v*w[i%3]}return t%10}
 const toNum=s=>s.replace(/O|Q|D/g,"0").replace(/I|L/g,"1").replace(/Z/g,"2").replace(/S/g,"5").replace(/B/g,"8").replace(/G/g,"6");
 const toAlpha=s=>s.replace(/0/g,"O").replace(/1/g,"I").replace(/5/g,"S").replace(/8/g,"B").replace(/2/g,"Z");
+let ocrWorker=null;
+$("bToTop").onclick=()=>window.scrollTo(0,0);
 async function runOCR(){
  if(!window.Tesseract){$("pOcr").textContent="자동 인식 엔진을 불러오지 못했습니다(인터넷 필요). 직접 입력해 주세요.";return}
  $("pOcr").textContent="여권 하단 코드 읽는 중... (처음엔 시간이 걸릴 수 있습니다)";
  try{
   const H=srcCanvas.height,W=srcCanvas.width;
   const results=[];
-  for(const frac of [0.35,0.5]){
+  for(const frac of [0.3,0.4,0.5]){
    const sy=Math.round(H*(1-frac)),sh=H-sy;
    const c=document.createElement("canvas");const sc=Math.min(2,2000/W);c.width=Math.round(W*sc);c.height=Math.round(sh*sc);
    const g=c.getContext("2d");g.filter="grayscale(1) contrast(1.6)";g.drawImage(srcCanvas,0,sy,W,sh,0,0,c.width,c.height);
-   const r=await Tesseract.recognize(c,"eng",{tessedit_char_whitelist:"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<",tessedit_pageseg_mode:"6"});
+   if(!ocrWorker){ocrWorker=await Tesseract.createWorker("eng");await ocrWorker.setParameters({tessedit_char_whitelist:"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<",tessedit_pageseg_mode:"6",preserve_interword_spaces:"0"})}
+   const r=await ocrWorker.recognize(c);
    const p=parseMRZ(r.data.text);if(p){results.push(p);if(p.okNo)break}
   }
   if(!results.length){$("pOcr").textContent="코드를 읽지 못했습니다. 여권 하단 2줄이 잘 보이게 다시 촬영하거나 직접 입력하세요.";return}
@@ -289,7 +298,7 @@ async function runOCR(){
  }catch(e){$("pOcr").textContent="자동 인식 실패. 직접 입력해 주세요."}
 }
 function parseMRZ(txt){
- let ls=txt.toUpperCase().replace(/[«‹]/g,"<").split(/\n/).map(s=>s.replace(/[^A-Z0-9<]/g,"")).filter(s=>s.length>=30&&s.includes("<"));
+ let ls=txt.toUpperCase().replace(/[«‹]/g,"<").split(/\n/).map(s=>s.replace(/[^A-Z0-9<]/g,"")).filter(s=>s.length>=34);
  if(ls.length<2)return null;
  let l1=ls[ls.length-2],l2=ls[ls.length-1];
  const fit=s=>s.length>44?s.slice(0,44):s.padEnd(44,"<");

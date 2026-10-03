@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#1b5e20">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="여권접수">
+<title>여권 접수</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;background:#f4f6f4;color:#222;font-size:17px}
+header{background:#1b5e20;color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:5}
+header h1{font-size:18px;margin:0}
+#status{font-size:13px}
+main{padding:14px;max-width:560px;margin:0 auto}
+.card{background:#fff;border-radius:12px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px #0002}
+label{display:block;font-size:14px;color:#555;margin:10px 0 4px}
+input[type=text],input[type=tel],input[type=password],input[type=number],input[type=date],select{width:100%;padding:12px;font-size:17px;border:1px solid #bbb;border-radius:8px;background:#fff}
+button{font-size:17px;padding:13px 16px;border:0;border-radius:10px;background:#1b5e20;color:#fff;width:100%;margin-top:10px}
+button.sec{background:#e0e6e0;color:#222}
+button.warn{background:#b71c1c}
+button:disabled{opacity:.5}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.hidden{display:none!important}
+.chk{display:flex;gap:10px;align-items:center;margin:12px 0;font-size:16px;color:#222}
+.chk input{width:22px;height:22px}
+.note{font-size:13px;color:#777;margin-top:6px}
+.err{color:#b71c1c;font-size:14px}
+.ok{color:#1b5e20;font-size:14px}
+#cropWrap{position:relative;touch-action:none;user-select:none}
+#srcCanvas{width:100%;display:block;border-radius:8px}
+#cropBox{position:absolute;border:3px solid #ffeb3b;box-shadow:0 0 0 9999px #0006;touch-action:none}
+#facePrev{width:90px;height:120px;object-fit:cover;border-radius:6px;border:1px solid #aaa}
+.prog{font-weight:bold;color:#1b5e20;font-size:20px}
+.pill{display:inline-block;padding:2px 8px;border-radius:10px;background:#fff3;font-size:12px}
+.q{font-size:14px;padding:8px 0;border-bottom:1px solid #eee}
+</style>
+</head>
+<body>
+<header><h1>여권 접수</h1><div><span id="status"></span></div></header>
+<main>
+
+<!-- 최초 설정 -->
+<section id="vSetup" class="hidden">
+ <div class="card">
+  <b>최초 설정 (관리자 1회)</b>
+  <label>Apps Script 웹앱 주소</label>
+  <input type="text" id="sUrl" placeholder="https://script.google.com/macros/s/.../exec">
+  <label>비밀 키 (Apps Script에 넣은 것과 동일)</label>
+  <input type="password" id="sKey">
+  <label>앱 잠금 PIN (숫자 4~6자리)</label>
+  <input type="password" id="sPin" inputmode="numeric" maxlength="6">
+  <button id="bSetup">저장</button>
+  <div id="eSetup" class="err"></div>
+ </div>
+</section>
+
+<!-- 잠금 -->
+<section id="vLock" class="hidden">
+ <div class="card">
+  <b>PIN 입력</b>
+  <input type="password" id="lPin" inputmode="numeric" maxlength="6" style="margin-top:10px">
+  <button id="bLock">열기</button>
+  <div id="eLock" class="err"></div>
+ </div>
+</section>
+
+<!-- 홈: 새 그룹 -->
+<section id="vHome" class="hidden">
+ <div class="card">
+  <b>새 접수</b>
+  <label>대표 예약자명 (수동 입력)</label>
+  <input type="text" id="hRep" autocomplete="off">
+  <label>대표자 연락처 (카톡 번호)</label>
+  <input type="tel" id="hPhone" placeholder="010-0000-0000 / +82...">
+  <label>인원수</label>
+  <div class="row">
+   <button class="sec cnt" data-n="1">1</button>
+   <button class="sec cnt" data-n="2">2</button>
+   <button class="sec cnt" data-n="4">4</button>
+  </div>
+  <label>또는 직접 입력</label>
+  <input type="number" id="hCount" min="1" max="40" value="2" inputmode="numeric">
+  <button id="bStart">촬영 시작</button>
+  <div id="eHome" class="err"></div>
+ </div>
+ <div class="card">
+  <b>전송 대기함</b> <span id="qCount"></span>
+  <div id="qList"></div>
+  <button id="bSync" class="sec">지금 전송</button>
+  <div id="sMsg" class="note"></div>
+ </div>
+ <button id="bLogout" class="sec">잠금</button>
+ <button id="bReset" class="sec hidden">설정 초기화</button>
+ <div class="note" style="text-align:center"><a href="#" id="lReset">설정 초기화</a></div>
+</section>
+
+<!-- 개인 입력 -->
+<section id="vPerson" class="hidden">
+ <div class="card">
+  <div class="prog" id="pProg"></div>
+  <div class="note" id="pRep"></div>
+  <input type="file" id="fFile" accept="image/*" capture="environment" class="hidden">
+  <button id="bShot">여권 촬영 / 사진 선택</button>
+  <div id="pOcr" class="note"></div>
+ </div>
+
+ <div id="pCrop" class="card hidden">
+  <b>얼굴 사진 영역 맞추기</b>
+  <div class="note">노란 박스를 끌어서 얼굴에 맞추세요. 아래 막대로 크기 조절.</div>
+  <div id="cropWrap"><canvas id="srcCanvas"></canvas><div id="cropBox"></div></div>
+  <input type="range" id="cropSize" min="10" max="60" value="28" style="width:100%;margin-top:10px">
+  <div class="row" style="align-items:center"><img id="facePrev" alt=""><div class="note">저장될 얼굴 미리보기</div></div>
+ </div>
+
+ <div id="pForm" class="card hidden">
+  <label>한글 이름 (직접 입력)</label>
+  <input type="text" id="pKo" autocomplete="off">
+  <label>영문 이름 (자동 인식, 수정 가능)</label>
+  <input type="text" id="pEn" autocapitalize="characters">
+  <label>여권번호</label>
+  <input type="text" id="pNo" autocapitalize="characters">
+  <div id="pCheck" class="note"></div>
+  <label>성별</label>
+  <select id="pSex"><option value="">선택</option><option value="M">남 (M)</option><option value="F">여 (F)</option></select>
+  <label>생년월일</label>
+  <input type="date" id="pDob">
+  <label>연락처 (선택)</label>
+  <input type="tel" id="pPhone">
+  <div class="chk"><input type="checkbox" id="pSame"><label for="pSame" style="margin:0;color:#222">대표자 번호와 동일</label></div>
+  <div class="chk"><input type="checkbox" id="pConsent"><label for="pConsent" style="margin:0;color:#222">생일 축하 및 안내 메시지 수신에 동의함 (손님 확인)</label></div>
+  <button id="bSave">저장하고 다음</button>
+  <button id="bCancel" class="sec">접수 취소</button>
+  <div id="ePerson" class="err"></div>
+ </div>
+</section>
+
+<section id="vDone" class="hidden">
+ <div class="card"><b>접수 완료</b><div id="dMsg" class="note"></div><button id="bAgain">새 접수</button></div>
+</section>
+
+</main>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const show=v=>{["vSetup","vLock","vHome","vPerson","vDone"].forEach(x=>$(x).classList.add("hidden"));$(v).classList.remove("hidden");window.scrollTo(0,0)};
+const cfg={get url(){return localStorage.getItem("url")||""},get key(){return localStorage.getItem("key")||""},get pin(){return localStorage.getItem("pinh")||""}};
+
+/* ---------- IndexedDB ---------- */
+let db;
+function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open("passportapp",1);r.onupgradeneeded=()=>r.result.createObjectStore("q",{keyPath:"id"});r.onsuccess=()=>{db=r.result;res()};r.onerror=()=>rej(r.error)})}
+const tx=(m)=>db.transaction("q",m).objectStore("q");
+const dbAll=()=>new Promise(r=>{const q=tx("readonly").getAll();q.onsuccess=()=>r(q.result)});
+const dbPut=o=>new Promise(r=>{const q=tx("readwrite").put(o);q.onsuccess=()=>r()});
+const dbDel=id=>new Promise(r=>{const q=tx("readwrite").delete(id);q.onsuccess=()=>r()});
+
+/* ---------- 보안 ---------- */
+async function sha(s){const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode("pp:"+s));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("")}
+let lastActive=Date.now();
+["click","touchstart"].forEach(e=>document.addEventListener(e,()=>lastActive=Date.now()));
+setInterval(()=>{if(unlocked&&!inGroup&&Date.now()-lastActive>5*60000)lock()},15000);
+let unlocked=false,inGroup=false;
+function lock(){unlocked=false;$("lPin").value="";show("vLock")}
+
+$("bSetup").onclick=async()=>{
+ const u=$("sUrl").value.trim(),k=$("sKey").value.trim(),p=$("sPin").value.trim();
+ if(!/^https:\/\/script\.google\.com\//.test(u))return $("eSetup").textContent="주소가 올바르지 않습니다.";
+ if(k.length<8)return $("eSetup").textContent="비밀 키는 8자 이상이어야 합니다.";
+ if(!/^\d{4,6}$/.test(p))return $("eSetup").textContent="PIN은 숫자 4~6자리.";
+ localStorage.setItem("url",u);localStorage.setItem("key",k);localStorage.setItem("pinh",await sha(p));
+ unlocked=true;home();
+};
+$("bLock").onclick=async()=>{
+ if(await sha($("lPin").value)===cfg.pin){unlocked=true;home()}else $("eLock").textContent="PIN이 틀렸습니다.";
+};
+$("lPin").addEventListener("keydown",e=>{if(e.key==="Enter")$("bLock").click()});
+$("bLogout").onclick=lock;
+$("lReset").onclick=async e=>{e.preventDefault();const p=prompt("설정을 초기화하려면 현재 PIN 입력 (전송 안 된 데이터는 삭제됩니다)");if(p&&await sha(p)===cfg.pin){localStorage.clear();const all=await dbAll();for(const r of all)await dbDel(r.id);location.reload()}};
+
+/* ---------- 홈 ---------- */
+let group=null;
+async function home(){
+ inGroup=false;show("vHome");await renderQ();sync();
+}
+document.querySelectorAll(".cnt").forEach(b=>b.onclick=()=>{$("hCount").value=b.dataset.n;document.querySelectorAll(".cnt").forEach(x=>x.classList.remove("on"));b.style.outline="3px solid #1b5e20"});
+$("bStart").onclick=()=>{
+ const rep=$("hRep").value.trim(),n=parseInt($("hCount").value,10);
+ if(!rep)return $("eHome").textContent="대표 예약자명을 입력하세요.";
+ if(!(n>=1&&n<=40))return $("eHome").textContent="인원수를 확인하세요.";
+ $("eHome").textContent="";
+ const d=new Date(),p=x=>String(x).padStart(2,"0");
+ group={id:"G"+String(d.getFullYear()).slice(2)+p(d.getMonth()+1)+p(d.getDate())+"-"+p(d.getHours())+p(d.getMinutes())+"-"+Math.random().toString(36).slice(2,5).toUpperCase(),rep,repPhone:$("hPhone").value.trim(),total:n,idx:1};
+ inGroup=true;startPerson();
+};
+$("bAgain").onclick=()=>{$("hRep").value="";$("hPhone").value="";home()};
+$("bCancel").onclick=()=>{if(confirm("이 접수를 중단할까요? (이미 저장된 사람은 유지됩니다)")){home()}};
+
+/* ---------- 개인 입력 ---------- */
+let srcCanvas=$("srcCanvas"),shotAt=null,hasPhoto=false;
+function startPerson(){
+ show("vPerson");
+ $("pProg").textContent=`${group.idx}/${group.total}번째 여권`;
+ $("pRep").textContent=`대표 예약자: ${group.rep}  (그룹 ${group.id})`;
+ ["pCrop","pForm"].forEach(x=>$(x).classList.add("hidden"));
+ ["pKo","pEn","pNo","pPhone"].forEach(x=>$(x).value="");$("pSex").value="";$("pDob").value="";
+ $("pSame").checked=false;$("pConsent").checked=false;$("pOcr").textContent="";$("pCheck").textContent="";$("ePerson").textContent="";
+ hasPhoto=false;shotAt=null;$("fFile").value="";
+}
+$("bShot").onclick=()=>$("fFile").click();
+$("pSame").onchange=()=>{if($("pSame").checked){$("pPhone").value=group.repPhone;$("pPhone").disabled=true}else{$("pPhone").disabled=false}};
+
+$("fFile").onchange=async e=>{
+ const f=e.target.files[0];if(!f)return;
+ shotAt=new Date();
+ $("pOcr").textContent="사진 처리 중...";
+ const bmp=await createImageBitmap(f,{imageOrientation:"from-image"}).catch(()=>createImageBitmap(f));
+ const sc=Math.min(1,1800/bmp.width);
+ srcCanvas.width=Math.round(bmp.width*sc);srcCanvas.height=Math.round(bmp.height*sc);
+ srcCanvas.getContext("2d").drawImage(bmp,0,0,srcCanvas.width,srcCanvas.height);
+ hasPhoto=true;
+ $("pCrop").classList.remove("hidden");$("pForm").classList.remove("hidden");
+ await autoCrop();
+ await runOCR();
+};
+
+/* 얼굴 크롭 박스 */
+const box=$("cropBox");let bx=0.05,by=0.3,bw=0.28; // 비율(이미지 너비 기준)
+function layoutBox(){
+ const W=srcCanvas.clientWidth,H=srcCanvas.clientHeight;
+ const w=bw*W,h=w*4/3;
+ bx=Math.max(0,Math.min(bx,1-bw));
+ by=Math.max(0,Math.min(by,(H-h)/W));
+ box.style.width=w+"px";box.style.height=h+"px";box.style.left=bx*W+"px";box.style.top=by*W+"px";
+ updatePrev();
+}
+async function autoCrop(){
+ bw=0.28;$("cropSize").value=28;
+ // 기본 위치: 데이터면 왼쪽 중단 추정
+ bx=0.05;by=0.3*(srcCanvas.height/srcCanvas.width);
+ if("FaceDetector" in window){
+  try{const fd=new FaceDetector({fastMode:true});const fs=await fd.detect(srcCanvas);
+   if(fs.length){const b=fs.sort((a,c)=>c.boundingBox.width-a.boundingBox.width)[0].boundingBox,W=srcCanvas.width;
+    const w=b.width*1.9;bw=Math.min(0.6,w/W);bx=(b.x+b.width/2-w/2)/W;by=(b.y+b.height/2-w*4/3/2)/W;$("cropSize").value=Math.round(bw*100)}}catch(e){}
+ }
+ requestAnimationFrame(layoutBox);
+}
+$("cropSize").oninput=()=>{bw=$("cropSize").value/100;layoutBox()};
+let drag=null;
+box.addEventListener("pointerdown",e=>{drag={x:e.clientX,y:e.clientY,bx,by};box.setPointerCapture(e.pointerId)});
+box.addEventListener("pointermove",e=>{if(!drag)return;const W=srcCanvas.clientWidth;bx=drag.bx+(e.clientX-drag.x)/W;by=drag.by+(e.clientY-drag.y)/W;layoutBox()});
+box.addEventListener("pointerup",()=>drag=null);
+function cropData(){
+ const k=srcCanvas.width/srcCanvas.clientWidth,W=srcCanvas.clientWidth;
+ const sx=bx*W*k,sy=by*W*k,sw=bw*W*k,sh=sw*4/3;
+ const c=document.createElement("canvas");c.width=240;c.height=320;
+ c.getContext("2d").drawImage(srcCanvas,sx,sy,sw,sh,0,0,240,320);
+ return c.toDataURL("image/jpeg",0.7);
+}
+function updatePrev(){if(hasPhoto)$("facePrev").src=cropData()}
+
+/* ---------- MRZ OCR ---------- */
+function cd(s){const w=[7,3,1];let t=0;for(let i=0;i<s.length;i++){const c=s[i];const v=c==="<"?0:/\d/.test(c)?+c:c.charCodeAt(0)-55;t+=v*w[i%3]}return t%10}
+const toNum=s=>s.replace(/O|Q|D/g,"0").replace(/I|L/g,"1").replace(/Z/g,"2").replace(/S/g,"5").replace(/B/g,"8").replace(/G/g,"6");
+const toAlpha=s=>s.replace(/0/g,"O").replace(/1/g,"I").replace(/5/g,"S").replace(/8/g,"B").replace(/2/g,"Z");
+async function runOCR(){
+ if(!window.Tesseract){$("pOcr").textContent="자동 인식 엔진을 불러오지 못했습니다(인터넷 필요). 직접 입력해 주세요.";return}
+ $("pOcr").textContent="여권 하단 코드 읽는 중... (처음엔 시간이 걸릴 수 있습니다)";
+ try{
+  const H=srcCanvas.height,W=srcCanvas.width;
+  const results=[];
+  for(const frac of [0.35,0.5]){
+   const sy=Math.round(H*(1-frac)),sh=H-sy;
+   const c=document.createElement("canvas");const sc=Math.min(2,2000/W);c.width=Math.round(W*sc);c.height=Math.round(sh*sc);
+   const g=c.getContext("2d");g.filter="grayscale(1) contrast(1.6)";g.drawImage(srcCanvas,0,sy,W,sh,0,0,c.width,c.height);
+   const r=await Tesseract.recognize(c,"eng",{tessedit_char_whitelist:"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<",tessedit_pageseg_mode:"6"});
+   const p=parseMRZ(r.data.text);if(p){results.push(p);if(p.okNo)break}
+  }
+  if(!results.length){$("pOcr").textContent="코드를 읽지 못했습니다. 여권 하단 2줄이 잘 보이게 다시 촬영하거나 직접 입력하세요.";return}
+  const p=results.find(x=>x.okNo)||results[0];
+  $("pEn").value=p.name;$("pNo").value=p.no;$("pSex").value=p.sex;if(p.dob)$("pDob").value=p.dob;
+  $("pOcr").innerHTML=p.okNo?'<span class="ok">자동 인식 완료. 내용을 확인하세요.</span>':'<span class="err">인식했지만 여권번호 검증 실패. 꼭 확인/수정하세요.</span>';
+  $("pCheck").textContent=p.okDob?"":"생년월일 검증 실패 가능성 있음, 확인하세요.";
+ }catch(e){$("pOcr").textContent="자동 인식 실패. 직접 입력해 주세요."}
+}
+function parseMRZ(txt){
+ let ls=txt.toUpperCase().replace(/[«‹]/g,"<").split(/\n/).map(s=>s.replace(/[^A-Z0-9<]/g,"")).filter(s=>s.length>=30&&s.includes("<"));
+ if(ls.length<2)return null;
+ let l1=ls[ls.length-2],l2=ls[ls.length-1];
+ const fit=s=>s.length>44?s.slice(0,44):s.padEnd(44,"<");
+ l1=fit(l1);l2=fit(l2);
+ if(!l1.startsWith("P")){const i=l1.indexOf("P<");if(i>=0)l1=fit(l1.slice(i))}
+ const nm=l1.slice(5).split("<<");
+ const sur=toAlpha(nm[0]).replace(/</g," ").trim();
+ const giv=toAlpha(nm.slice(1).join(" ")).replace(/</g," ").replace(/\s+/g," ").trim();
+ const no=l2.slice(0,9);
+ const okNo=cd(no)===(/\d/.test(l2[9])?+l2[9]:toNum(l2[9])*1);
+ const dobS=toNum(l2.slice(13,19)),okDob=cd(dobS)===+toNum(l2[19]);
+ let sex=l2[20];sex=sex==="M"||sex==="F"?sex:"";
+ const yy=+dobS.slice(0,2),cy=new Date().getFullYear()%100;
+ const yr=(yy>cy?1900:2000)+yy;
+ const dob=/^\d{6}$/.test(dobS)?`${yr}-${dobS.slice(2,4)}-${dobS.slice(4,6)}`:"";
+ return{name:(sur+" "+giv).trim(),no:no.replace(/</g,""),sex,dob,okNo,okDob};
+}
+
+/* ---------- 저장 ---------- */
+$("bSave").onclick=async()=>{
+ const rec={
+  id:crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random(),
+  groupId:group.id,rep:group.rep,idx:group.idx,total:group.total,
+  photo:hasPhoto?cropData():"",
+  nameKo:$("pKo").value.trim(),nameEn:$("pEn").value.trim().toUpperCase(),passNo:$("pNo").value.trim().toUpperCase(),
+  sex:$("pSex").value,dob:$("pDob").value,phone:$("pPhone").value.trim(),consent:$("pConsent").checked?"동의":"미동의",
+  shotAt:(shotAt||new Date()).toISOString(),synced:false
+ };
+ if(!rec.nameEn&&!rec.nameKo)return $("ePerson").textContent="이름(한글 또는 영문)을 입력하세요.";
+ if(!rec.passNo)return $("ePerson").textContent="여권번호를 입력하세요.";
+ await dbPut(rec);
+ sync();
+ if(group.idx<group.total){group.idx++;startPerson()}
+ else{inGroup=false;show("vDone");$("dMsg").textContent=`${group.rep} 님 일행 ${group.total}명 저장 완료. 인터넷 연결 시 자동 전송됩니다.`}
+};
+
+/* ---------- 동기화 ---------- */
+let syncing=false;
+async function renderQ(){
+ const all=await dbAll();
+ $("qCount").textContent=all.length?`(${all.length}건 대기)`:"(없음)";
+ $("qList").innerHTML=all.map(r=>`<div class="q">${esc(r.rep)} ${r.idx}/${r.total} · ${esc(r.nameEn||r.nameKo)} ${r.err?'<span class="err">'+esc(r.err)+'</span>':''}</div>`).join("");
+}
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+async function sync(){
+ if(syncing||!cfg.url||!navigator.onLine)return updStatus();
+ syncing=true;
+ try{
+  const all=(await dbAll()).sort((a,b)=>a.shotAt<b.shotAt?-1:1);
+  for(const r of all){
+   try{
+    const body=JSON.stringify({key:cfg.key,rec:{...r,repPhone:undefined}});
+    const resp=await fetch(cfg.url,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body});
+    const j=await resp.json();
+    if(j.ok){await dbDel(r.id)}else{r.err=j.error==="auth"?"키 오류":"서버 오류";await dbPut(r);break}
+   }catch(e){break}
+  }
+ }finally{syncing=false;updStatus();if(!$("vHome").classList.contains("hidden"))renderQ()}
+}
+async function updStatus(){
+ if(!db)return;const n=(await dbAll()).length;
+ $("status").textContent=(navigator.onLine?"온라인":"오프라인")+(n?` · 대기 ${n}`:"");
+ if(!$("vHome").classList.contains("hidden"))$("sMsg").textContent=n?"":"모두 전송되었습니다.";
+}
+$("bSync").onclick=()=>{$("sMsg").textContent="전송 중...";sync()};
+window.addEventListener("online",sync);window.addEventListener("offline",updStatus);
+setInterval(sync,30000);
+
+/* ---------- 시작 ---------- */
+(async()=>{
+ await openDB();
+ if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
+ if(!cfg.url||!cfg.pin)show("vSetup");else lock();
+ updStatus();
+})();
+</script>
+</body>
+</html>

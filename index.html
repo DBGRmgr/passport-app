@@ -16,7 +16,9 @@
 body{margin:0;font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;background:#f4f6f4;color:#222;font-size:17px}
 header{background:#1b5e20;color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:5}
 header h1{font-size:18px;margin:0}
-#status{font-size:13px}
+#status{display:flex;align-items:center;gap:6px;font-size:13px}
+.net{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:50%;background:#fff}
+.net svg{width:28px;height:28px}
 main{padding:14px 14px 130px;max-width:560px;margin:0 auto}
 .card{background:#fff;border-radius:12px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px #0002}
 label{display:block;font-size:14px;color:#555;margin:10px 0 4px}
@@ -44,6 +46,16 @@ button:disabled{opacity:.5}
 .pp input{width:22px;height:22px}
 .pp .nm{font-size:18px;font-weight:bold}
 .big2{font-size:22px;font-weight:bold}
+.dots{display:flex;gap:16px;justify-content:center;margin:22px 0 8px}
+.dots span{width:18px;height:18px;border-radius:50%;border:2px solid #1b5e20}
+.dots span.f{background:#1b5e20}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:8px;user-select:none;-webkit-user-select:none}
+.pad button{margin:0;font-size:28px;padding:18px 0;background:#f1f5f1;color:#222;border:1px solid #cfd8cf;touch-action:manipulation}
+.pad button:active{background:#c8e6c9}
+.pad button.fn{font-size:16px;background:#e0e6e0}
+.phw{display:flex;gap:6px}
+.phw select{flex:0 0 118px;width:118px;padding:12px 6px;font-size:16px}
+.phw input{flex:1;min-width:0}
 .frow{display:flex;gap:8px;align-items:center}
 .frow input,.frow select{flex:1;min-width:0}
 .frow .ed{width:auto;margin:0;padding:12px 14px;font-size:15px;background:#fff;color:#1b5e20;border:1px solid #1b5e20;flex:none}
@@ -56,7 +68,7 @@ button:disabled{opacity:.5}
 </style>
 </head>
 <body>
-<header><h1>여권 접수</h1><div><span id="status"></span></div></header>
+<header><h1 id="hTitle">손님 여권 접수 화면</h1><div id="status"></div></header>
 <main>
 
 <!-- 최초 설정 -->
@@ -76,11 +88,11 @@ button:disabled{opacity:.5}
 
 <!-- 잠금 -->
 <section id="vLock" class="hidden">
- <div class="card">
-  <b>PIN 입력</b>
-  <input type="password" id="lPin" inputmode="numeric" maxlength="6" style="margin-top:10px">
-  <button id="bLock">열기</button>
-  <div id="eLock" class="err"></div>
+ <div class="card" style="text-align:center">
+  <b style="font-size:19px">PIN 입력</b>
+  <div id="pinDots" class="dots"></div>
+  <div id="eLock" class="err" style="min-height:20px"></div>
+  <div id="pad" class="pad"></div>
  </div>
 </section>
 
@@ -104,8 +116,7 @@ button:disabled{opacity:.5}
   <button id="bSync" class="sec">지금 전송</button>
   <div id="sMsg" class="note"></div>
  </div>
- <button id="bLogout" class="sec">잠금</button>
- <div class="note" style="text-align:center;margin-top:14px"><a href="#" id="lReset">설정 초기화</a></div>
+ <button id="bLogout" class="sec">화면 잠금 (PIN 화면으로)</button>
 </section>
 
 <!-- 개인 여권 -->
@@ -122,6 +133,7 @@ button:disabled{opacity:.5}
   <div class="note">틀린 곳은 "수정"을 눌러 고치세요. 빨간 칸은 인식하지 못한 칸입니다.</div>
   <div class="fr" id="r_pKo"><label>한글 이름</label><div class="frow"><input type="text" id="pKo" autocomplete="off"><button class="ed" data-f="pKo">수정</button></div></div>
   <div class="fr" id="r_pEn"><label>영문 이름</label><div class="frow"><input type="text" id="pEn" autocapitalize="characters" autocomplete="off"><button class="ed" data-f="pEn">수정</button></div></div>
+  <div class="fr" id="r_pNat"><label>국적</label><div class="frow"><select id="pNat"></select><button class="ed" data-f="pNat">수정</button></div></div>
   <div class="fr" id="r_pNo"><label>여권번호</label><div class="frow"><input type="text" id="pNo" autocapitalize="characters" autocomplete="off"><button class="ed" data-f="pNo">수정</button></div></div>
   <div id="pCheck" class="note err"></div>
   <div class="fr" id="r_pSex"><label>성별</label><div class="frow"><select id="pSex"><option value="">선택</option><option value="M">남 (M)</option><option value="F">여 (F)</option></select><button class="ed" data-f="pSex">수정</button></div></div>
@@ -135,7 +147,7 @@ button:disabled{opacity:.5}
   <div class="row"><img id="facePrev" alt=""><div class="note">저장될 얼굴 미리보기</div></div>
  </div>
  <div id="pCropOld" class="card hidden"><div class="row"><img id="oldFace" style="width:90px;height:120px;object-fit:cover;border-radius:6px" alt=""><div class="note">저장된 얼굴 사진. 바꾸려면 위에서 다시 촬영하세요.</div></div></div>
- <button id="bCancel" class="sec">접수 전체 취소</button>
+ <button id="bCancel" class="sec">뒤로 가기</button>
  <div id="pBar" class="bar hidden">
   <div id="ePerson" class="err"></div>
   <button id="bSave">확인 완료, 다음</button>
@@ -148,7 +160,7 @@ button:disabled{opacity:.5}
   <div class="prog" id="cProg"></div>
   <div class="big2" id="cName" style="margin-top:8px"></div>
   <label>이 분의 연락처 (카톡 번호)</label>
-  <input type="tel" id="cPhone" placeholder="010-0000-0000">
+  <input type="tel" id="cPhone" placeholder="010-1234-5678">
   <div class="note">없으면 비워두고 "연락처 없음"을 누르세요.</div>
   <button id="bBackEdit" class="sec">← 여권 정보 다시 수정</button>
  </div>
@@ -165,7 +177,7 @@ button:disabled{opacity:.5}
   <div class="note">아래 일행 중 대표 예약자를 눌러 선택하세요. 오타가 있으면 각 사람의 "수정"을 누르세요.</div>
   <div id="fList"></div>
   <label style="margin-top:16px">대표자 연락처 (카톡 번호)</label>
-  <input type="tel" id="fRepPhone" placeholder="010-0000-0000">
+  <input type="tel" id="fRepPhone" placeholder="010-1234-5678">
   <div class="note">대표자를 선택하면 그 분의 연락처가 자동으로 들어갑니다. 수정 가능.</div>
   <button id="bFinalCancel" class="sec">접수 전체 취소</button>
  </div>
@@ -189,6 +201,26 @@ let curView="";
 const show=v=>{VIEWS.forEach(x=>$(x).classList.add("hidden"));$(v).classList.remove("hidden");curView=v;window.scrollTo(0,0)};
 const cfg={get url(){return localStorage.getItem("url")||""},get key(){return localStorage.getItem("key")||""},get pin(){return localStorage.getItem("pinh")||""}};
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+/* ---------- 국가 목록 (ISO2|ISO3|이름|국제전화코드) ---------- */
+const TOP="KR|KOR|대한민국|82,US|USA|미국|1,CA|CAN|캐나다|1,AU|AUS|호주|61,NZ|NZL|뉴질랜드|64,JP|JPN|일본|81,CN|CHN|중국|86,MY|MYS|말레이시아|60,SG|SGP|싱가포르|65,GB|GBR|영국|44,DE|DEU|독일|49,FR|FRA|프랑스|33,TW|TWN|대만|886,HK|HKG|홍콩|852,PH|PHL|필리핀|63,VN|VNM|베트남|84,TH|THA|태국|66,ID|IDN|인도네시아|62";
+const REST="GH|GHA|가나|233,GU|GUM|괌|1,GR|GRC|그리스|30,NG|NGA|나이지리아|234,ZA|ZAF|남아프리카공화국|27,NL|NLD|네덜란드|31,NP|NPL|네팔|977,NO|NOR|노르웨이|47,DK|DNK|덴마크|45,DO|DOM|도미니카공화국|1,LA|LAO|라오스|856,RU|RUS|러시아|7,LU|LUX|룩셈부르크|352,MO|MAC|마카오|853,MX|MEX|멕시코|52,MV|MDV|몰디브|960,MN|MNG|몽골|976,MM|MMR|미얀마|95,BH|BHR|바레인|973,BD|BGD|방글라데시|880,BE|BEL|벨기에|32,BR|BRA|브라질|55,BN|BRN|브루나이|673,SA|SAU|사우디아라비아|966,LK|LKA|스리랑카|94,SE|SWE|스웨덴|46,CH|CHE|스위스|41,ES|ESP|스페인|34,AR|ARG|아르헨티나|54,AE|ARE|아랍에미리트|971,IE|IRL|아일랜드|353,AT|AUT|오스트리아|43,OM|OMN|오만|968,UZ|UZB|우즈베키스탄|998,UA|UKR|우크라이나|380,IL|ISR|이스라엘|972,EG|EGY|이집트|20,IT|ITA|이탈리아|39,IN|IND|인도|91,CZ|CZE|체코|420,CL|CHL|칠레|56,KZ|KAZ|카자흐스탄|7,QA|QAT|카타르|974,KH|KHM|캄보디아|855,KE|KEN|케냐|254,CO|COL|콜롬비아|57,KW|KWT|쿠웨이트|965,KG|KGZ|키르기스스탄|996,TR|TUR|튀르키예|90,PK|PAK|파키스탄|92,PE|PER|페루|51,PT|PRT|포르투갈|351,PL|POL|폴란드|48,FJ|FJI|피지|679,FI|FIN|핀란드|358,HU|HUN|헝가리|36";
+const COUNTRIES=[...TOP.split(","),...REST.split(",").sort((a,b)=>a.split("|")[2].localeCompare(b.split("|")[2],"ko"))].map(x=>x.split("|"));
+const flag=iso2=>String.fromCodePoint(...[...iso2].map(c=>0x1F1E6+c.charCodeAt(0)-65));
+const NAT={};COUNTRIES.forEach(c=>NAT[c[1]]=c);
+const natLabel=c=>!c?"":NAT[c]?`${NAT[c][2]}(${c})`:c;
+const NAT_OPTS='<option value="">선택</option>'+COUNTRIES.map(c=>`<option value="${c[1]}">${flag(c[0])} ${c[2]} (${c[1]})</option>`).join("");
+const CC_OPTS=COUNTRIES.map(c=>`<option value="${c[0]}">${flag(c[0])} +${c[3]} ${c[2]}</option>`).join("");
+function attachCC(id){const el=document.getElementById(id);if(document.getElementById(id+"_cc"))return;
+ const w=document.createElement("div");w.className="phw";el.parentNode.insertBefore(w,el);
+ const sel=document.createElement("select");sel.id=id+"_cc";sel.innerHTML=CC_OPTS;sel.value="KR";w.appendChild(sel);w.appendChild(el);}
+function getPh(id){const n=document.getElementById(id).value.trim();if(!n)return"";if(n.startsWith("+"))return n.replace(/\s+/g," ");
+ const c=COUNTRIES.find(x=>x[0]===document.getElementById(id+"_cc").value)||COUNTRIES[0];return `+${c[3]} ${n.replace(/^0/,"")}`}
+function setPh(id,v){const el=document.getElementById(id),sel=document.getElementById(id+"_cc");v=v||"";
+ const m=v.match(/^\+(\d{1,4})\s+(.*)$/);
+ if(m){const cur=COUNTRIES.find(x=>x[0]===sel.value);const c=(cur&&cur[3]===m[1])?cur:COUNTRIES.find(x=>x[3]===m[1]);
+  if(c){sel.value=c[0];el.value=(c[0]==="KR"&&/^1/.test(m[2])?"0":"")+m[2];return}}
+ sel.value="KR";el.value=v}
+function ensureNat(code){if(code&&!NAT[code]&&!$("pNat").querySelector(`option[value="${code}"]`))$("pNat").insertAdjacentHTML("beforeend",`<option value="${code}">${code}</option>`)}
 const uid=()=>crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random().toString(36).slice(2);
 
 /* ---------- IndexedDB ---------- */
@@ -211,20 +243,45 @@ async function sha(s){const b=await crypto.subtle.digest("SHA-256",new TextEncod
 let unlocked=false,lastActive=Date.now();
 ["click","touchstart","keydown"].forEach(e=>document.addEventListener(e,()=>lastActive=Date.now()));
 setInterval(()=>{if(unlocked&&(curView==="vHome"||curView==="vDone")&&Date.now()-lastActive>5*60000)lock()},15000);
-function lock(){unlocked=false;$("lPin").value="";$("eLock").textContent="";show("vLock")}
+let pinBuf="",pinFails=0,pinWaitUntil=0;
+function lock(){unlocked=false;pinBuf="";$("eLock").textContent="";renderPad();renderDots();show("vLock")}
+function rnd(n){const a=new Uint32Array(1);crypto.getRandomValues(a);return a[0]%n}
+function renderPad(){
+ const d=[0,1,2,3,4,5,6,7,8,9];for(let i=d.length-1;i>0;i--){const j=rnd(i+1);[d[i],d[j]]=[d[j],d[i]]}
+ const keys=[...d.slice(0,9).map(String),"지움",String(d[9]),"확인"];
+ $("pad").innerHTML=keys.map(k=>`<button type="button" class="${/\d/.test(k)?"":"fn"}" data-k="${k}">${k}</button>`).join("");
+ $("pad").querySelectorAll("button").forEach(b=>b.onclick=()=>padKey(b.dataset.k));
+}
+function renderDots(){const L=+localStorage.getItem("pinlen")||0,n=Math.max(L||4,pinBuf.length);
+ $("pinDots").innerHTML=Array.from({length:n},(_,i)=>`<span class="${i<pinBuf.length?"f":""}"></span>`).join("")}
+async function padKey(k){
+ if(Date.now()<pinWaitUntil){$("eLock").textContent=`잠시 후 다시 시도하세요 (${Math.ceil((pinWaitUntil-Date.now())/1000)}초)`;return}
+ if(k==="지움")pinBuf=pinBuf.slice(0,-1);
+ else if(k==="확인")return tryPin();
+ else if(pinBuf.length<6)pinBuf+=k;
+ renderDots();
+ const L=+localStorage.getItem("pinlen")||0;if(L&&pinBuf.length===L)tryPin();
+}
+async function tryPin(){
+ if(pinBuf.length<4){$("eLock").textContent="PIN 4~6자리를 누르세요.";return}
+ if(await sha(pinBuf)===cfg.pin){localStorage.setItem("pinlen",pinBuf.length);pinFails=0;unlocked=true;pinBuf="";home()}
+ else{pinFails++;pinBuf="";$("eLock").textContent="PIN이 틀렸습니다.";
+  if(pinFails>=5){pinWaitUntil=Date.now()+30000;pinFails=0;$("eLock").textContent="5회 틀려서 30초간 잠깁니다."}
+  renderPad();renderDots()}
+}
 $("bSetup").onclick=async()=>{
  const u=$("sUrl").value.trim(),k=$("sKey").value.trim(),p=$("sPin").value.trim();
  if(!/^https:\/\/script\.google\.com\//.test(u))return $("eSetup").textContent="주소가 올바르지 않습니다.";
  if(k.length<8)return $("eSetup").textContent="비밀 키를 확인하세요.";
  if(!/^\d{4,6}$/.test(p))return $("eSetup").textContent="PIN은 숫자 4~6자리.";
- localStorage.setItem("url",u);localStorage.setItem("key",k);localStorage.setItem("pinh",await sha(p));
+ localStorage.setItem("url",u);localStorage.setItem("key",k);localStorage.setItem("pinh",await sha(p));localStorage.setItem("pinlen",p.length);
  unlocked=true;home();
 };
-$("bLock").onclick=async()=>{if(await sha($("lPin").value)===cfg.pin){unlocked=true;home()}else $("eLock").textContent="PIN이 틀렸습니다."};
-$("lPin").addEventListener("keydown",e=>{if(e.key==="Enter")$("bLock").click()});
 $("bLogout").onclick=lock;
-$("lReset").onclick=async e=>{e.preventDefault();const p=prompt("설정 초기화: 현재 PIN 입력 (전송 안 된 데이터는 삭제됩니다)");
- if(p&&await sha(p)===cfg.pin){localStorage.clear();for(const r of await qAll())await qDel(r.id);await draftDel();location.reload()}};
+// 관리자 전용: 제목을 3초간 누르면 설정 초기화 (비밀키/주소/PIN 변경 시)
+let lpT=null;$("hTitle").addEventListener("pointerdown",()=>{lpT=setTimeout(resetAll,3000)});["pointerup","pointerleave","pointercancel"].forEach(ev=>$("hTitle").addEventListener(ev,()=>clearTimeout(lpT)));
+async function resetAll(){if(!cfg.pin)return;const p=prompt("설정 초기화: 현재 PIN 입력 (전송 안 된 데이터는 삭제됩니다)");
+ if(p&&await sha(p)===cfg.pin){localStorage.clear();for(const r of await qAll())await qDel(r.id);await draftDel();location.reload()}}
 
 /* ---------- 홈 ---------- */
 for(let i=1;i<=30;i++){const o=document.createElement("option");o.value=i;o.textContent=i+"명";$("hCount").appendChild(o)}
@@ -252,14 +309,22 @@ function resumeGroup(){
  startPerson();
 }
 async function cancelGroup(){if(confirm("이 접수 전체를 취소할까요? 입력한 내용이 모두 삭제됩니다.")){await draftDel();group=null;home()}}
-$("bCancel").onclick=cancelGroup;$("bFinalCancel").onclick=cancelGroup;
+$("bFinalCancel").onclick=cancelGroup;
+let editOrig=null;
+$("bCancel").onclick=async()=>{
+ if(hasPhoto&&!editOrig&&!confirm("지금 촬영한 여권 정보는 저장되지 않습니다. 뒤로 갈까요?"))return;
+ ocrToken++;setBusy(false);
+ if(editOrig){group.persons.push(editOrig);editOrig=null;editPhone=undefined;await draftPut(group);return showContact()}
+ if(group.persons.length)return showContact();
+ await draftDel();group=null;home();
+};
 $("bAgain").onclick=home;
 
 /* ---------- 개인 여권 입력 ---------- */
 const srcCanvas=$("srcCanvas");let shotAt=null,hasPhoto=false,ocrToken=0,ocrBusy=false,keepPhoto="",editId=null;
-const FIELDS=["pKo","pEn","pNo","pSex","pDob"];
+const FIELDS=["pKo","pEn","pNat","pNo","pSex","pDob"];
 FIELDS.forEach(id=>{const el=$(id);el.addEventListener("input",()=>{el.dataset.touched="1";markMiss(id)});el.addEventListener("change",()=>{el.dataset.touched="1";markMiss(id)})});
-function markMiss(id){$("r_"+id).classList.toggle("miss",!$(id).value.trim())}
+function markMiss(id){let m=!$(id).value.trim();if(id==="pKo"&&$("pNat").value&&$("pNat").value!=="KOR")m=false;$("r_"+id).classList.toggle("miss",m);if(id==="pNat")markMiss("pKo")}
 function setLock(id,lock){const el=$(id),b=document.querySelector(`.ed[data-f="${id}"]`);
  if(lock&&!el.value.trim())lock=false;
  el.readOnly=lock;if(el.tagName==="SELECT"||el.type==="date")el.disabled=lock;
@@ -268,7 +333,7 @@ function lockAll(){FIELDS.forEach(id=>setLock(id,true))}
 document.querySelectorAll(".ed").forEach(b=>b.onclick=()=>{const id=b.dataset.f,el=$(id);
  if(el.readOnly||el.disabled){setLock(id,false);el.dataset.touched="1";b.classList.remove("hidden");el.focus();if(el.showPicker&&el.tagName==="SELECT")try{el.showPicker()}catch(e){}}
  else setLock(id,true)});
-function autoSet(id,v){if(v&&$(id).dataset.touched!=="1")$(id).value=v}
+function autoSet(id,v){if(!v||$(id).dataset.touched==="1")return;if(id==="pNat")ensureNat(v);$(id).value=v}
 function setBusy(b){ocrBusy=b;$("bSave").disabled=b;$("bSave").textContent=b?"인식 중... 잠시만 기다려 주세요":"확인 완료, 다음"}
 function startPerson(){
  ocrToken++;setBusy(false);editId=null;keepPhoto="";
@@ -329,30 +394,45 @@ function updatePrev(){if(hasPhoto)$("facePrev").src=cropData()}
 function cd(s){const w=[7,3,1];let t=0;for(let i=0;i<s.length;i++){const c=s[i];const v=c==="<"?0:/\d/.test(c)?+c:c.charCodeAt(0)-55;t+=v*w[i%3]}return t%10}
 const toNum=s=>s.replace(/O|Q|D/g,"0").replace(/I|L/g,"1").replace(/Z/g,"2").replace(/S/g,"5").replace(/B/g,"8").replace(/G/g,"6");
 const toAl={"0":"O","1":"I","2":"Z","5":"S","8":"B","6":"G"};
-function fixPassNo(no,chk){ // 여권번호 오인식 보정 (B<->8, O<->0 등), 검증번호로 확인
- const opts=[...no].map((c,i)=>{const set=new Set([c]);if(i>0){set.add(toNum(c));if(toAl[c])set.add(toAl[c])}return[...set]});
- let best=null;const rec=(i,cur)=>{if(best&&best.score>=3)return;if(i===9){if(cd(cur)!==chk)return;
-  const sc=/^[A-Z]\d{3}[A-Z]\d{4}$/.test(cur)||/^[A-Z]\d{8}$/.test(cur)?3:1;if(!best||sc>best.score)best={no:cur,score:sc};return}
-  for(const o of opts[i])rec(i+1,cur+o)};
- rec(0,"");return best?best.no:null;
+function fixPassNo(no,chk){ // 여권번호 오인식 보정 (B<->8, O<->0 등): 검증번호가 맞는 후보 중 바꾼 글자가 가장 적은 것
+ const opts=[...no].map((c,i)=>{const set=[c];const n=toNum(c);if(i>0&&n!==c)set.push(n);if(i>0&&toAl[c]&&toAl[c]!==c)set.push(toAl[c]);return set});
+ let best=null;const rec=(i,cur,ch)=>{if(ch>3)return;if(i===9){if(cd(cur)!==chk)return;
+  const sc=(/^[A-Z]\d{3}[A-Z]\d{4}$/.test(cur)||/^[A-Z]\d{8}$/.test(cur))?0:1;
+  const lt=(cur.slice(1).match(/[A-Z]/g)||[]).length;
+  if(!best||sc<best.sc||(sc===best.sc&&(ch<best.ch||(ch===best.ch&&lt<best.lt))))best={no:cur,ch,sc,lt};return}
+  opts[i].forEach((o,k)=>rec(i+1,cur+o,ch+(k?1:0)))};
+ rec(0,"",0);return best?best.no:null;
+}
+function normNat(raw){
+ let a=String(raw||"").replace(/</g,"").replace(/[0-9]/g,c=>({"0":"O","1":"I","2":"Z","5":"S","8":"B","6":"G"}[c]||""));
+ if(a==="D")return "DEU";
+ if(NAT[a])return a;
+ if(/^K.{0,2}R$/.test(a))return "KOR";
+ if(a.length===4)for(let i=0;i<4;i++){const b=a.slice(0,i)+a.slice(i+1);if(NAT[b])return b}
+ return a.length===3?a:"";
 }
 function parseMRZ(txt){
  let ls=txt.toUpperCase().replace(/[«‹]/g,"<").split(/\n/).map(s=>s.replace(/[^A-Z0-9<]/g,"")).filter(s=>s.length>=34);
  if(ls.length<2)return null;
  const fit=s=>s.length>44?s.slice(0,44):s.padEnd(44,"<");
  let l1=fit(ls[ls.length-2]),raw2=ls[ls.length-1];
- // 국적(KOR) 위치로 줄 맞춤
- const nm=raw2.slice(8,16).match(/K[O0D]{1,2}R/);
- let e=13;if(nm)e=8+nm.index+nm[0].length;
- const l2=raw2.slice(0,10)+"KOR"+raw2.slice(e);
- let no=l2.slice(0,9);const chk=+toNum(l2[9]);
+ // 국적 칸 길이(OCR 글자 누락/추가) 보정: 생년월일 검증번호가 맞는 정렬 선택
+ let al=null;
+ for(const nl of [3,4,2]){
+  const rest=raw2.slice(10+nl),dS=toNum(rest.slice(0,6)),ok=/^\d{6}$/.test(dS)&&cd(dS)===+toNum(rest[6]||"x");
+  const code=normNat(raw2.slice(10,10+nl));
+  const c={rest,dS,ok,code};
+  if(!al||(ok&&!al.ok)||(ok===al.ok&&code&&!al.code))al=c;
+  if(ok&&code)break;
+ }
+ let no=raw2.slice(0,9);const chk=+toNum(raw2[9]||"x");
  let okNo=cd(no)===chk;if(!okNo){const f=fixPassNo(no,chk);if(f){no=f;okNo=true}}
- const dobS=toNum(l2.slice(13,19)),okDob=cd(dobS)===+toNum(l2[19]);
- let sex=l2[20];sex=sex==="M"||sex==="F"?sex:"";
+ const dobS=al.dS,okDob=al.ok,nat=al.code||normNat(l1.slice(2,5));
+ let sex=al.rest[7];sex=sex==="M"||sex==="F"?sex:"";
  const yy=+dobS.slice(0,2),cy=new Date().getFullYear()%100;
  const dob=/^\d{6}$/.test(dobS)?`${(yy>cy?1900:2000)+yy}-${dobS.slice(2,4)}-${dobS.slice(4,6)}`:"";
  const sur=(l1.slice(5).match(/^[A-Z]+/)||[""])[0];
- return{no:no.replace(/</g,""),sex,dob,okNo,okDob,sur};
+ return{no:no.replace(/</g,""),sex,dob,okNo,okDob,sur,nat};
 }
 const SURN={"김":["KIM","GIM"],"이":["LEE","YI","RHEE","RHIE","I"],"박":["PARK","BAK","PAK"],"최":["CHOI","CHOE"],"정":["JUNG","JEONG","CHUNG","CHEONG"],"강":["KANG","GANG"],"조":["CHO","JO","JOH"],"윤":["YOON","YUN"],"장":["JANG","CHANG"],"임":["LIM","IM","YIM"],"한":["HAN"],"오":["OH","O"],"서":["SEO","SUH"],"신":["SHIN","SIN"],"권":["KWON","GWON"],"황":["HWANG"],"안":["AHN","AN"],"송":["SONG"],"류":["RYU","YOO","YU"],"유":["YOO","YU","RYU"],"전":["JEON","JUN","CHUN"],"홍":["HONG"],"고":["KO","GO","KOH"],"문":["MOON","MUN"],"양":["YANG"],"손":["SON","SOHN"],"배":["BAE","BAI"],"백":["BAEK","BACK","PAIK"],"허":["HEO","HUH","HUR"],"남":["NAM"],"심":["SIM","SHIM"],"노":["NOH","NO","RO","ROH"],"하":["HA"],"곽":["KWAK","GWAK"],"성":["SUNG","SEONG"],"차":["CHA"],"주":["JOO","JU","CHOO"],"우":["WOO","U"],"구":["KOO","KU","GU"],"민":["MIN"],"진":["JIN","CHIN"],"나":["NA","RA"],"지":["JI","CHI"],"엄":["UM","EOM"],"채":["CHAE"],"원":["WON"],"천":["CHUN","CHEON"],"방":["BANG"],"공":["KONG","GONG"],"현":["HYUN","HYEON"],"함":["HAM"],"변":["BYUN","BYEON"],"염":["YEOM","YUM"],"여":["YEO","YUH"],"추":["CHU","CHOO"],"도":["DO","DOH"],"소":["SO"],"석":["SEOK","SUK"],"선":["SUN","SEON"],"설":["SEOL","SUL"],"마":["MA"],"길":["GIL","KIL"],"연":["YEON","YUN"],"위":["WI","WEE"],"표":["PYO"],"명":["MYUNG","MYEONG"],"기":["KI","GI"],"반":["BAN"],"왕":["WANG"],"금":["KEUM","GEUM"],"옥":["OK"],"육":["YUK"],"인":["IN"],"맹":["MAENG"],"제":["JE"],"모":["MO"],"탁":["TAK"],"국":["KOOK","GUK"],"어":["EO","UH"],"은":["EUN"],"편":["PYUN","PYEON"],"용":["YONG"],"예":["YE"],"경":["KYUNG","GYEONG"],"봉":["BONG"],"사":["SA"],"부":["BOO","BU"],"황보":["HWANGBO"],"남궁":["NAMGOONG","NAMGUNG"],"제갈":["JEGAL"],"선우":["SUNWOO"],"독고":["DOKGO"]};
 const KO_LBL=/대한|민국|여권|성명|국적|생년|월일|성별|발급|발행|관청|기간|만료|외교|종류|번호|주민|등록|한글|이름|서명|소지|일자|국가|코드|여행|증명|사진|관인/;
@@ -419,8 +499,8 @@ async function runOCR2(tok){
    const p=parseMRZ(r.data.text);if(p&&(!mrz||p.okNo))mrz=p;if(mrz&&mrz.okNo)break;
   }
   if(tok!==ocrToken)return;
-  if(mrz){autoSet("pNo",mrz.no);autoSet("pSex",mrz.sex);autoSet("pDob",mrz.dob);["pNo","pSex","pDob"].forEach(id=>setLock(id,true));
-   msg[0]=mrz.okNo?'<span class="ok">① 여권번호·성별·생년월일 인식 완료</span>':'<span class="err">① 여권번호 검증 실패, 꼭 확인하세요</span>';
+  if(mrz){autoSet("pNo",mrz.no);autoSet("pSex",mrz.sex);autoSet("pDob",mrz.dob);autoSet("pNat",mrz.nat);["pNat","pNo","pSex","pDob"].forEach(id=>setLock(id,true));
+   msg[0]=mrz.okNo?'<span class="ok">① 국적·여권번호·성별·생년월일 인식 완료</span>':'<span class="err">① 여권번호 검증 실패, 꼭 확인하세요</span>';
    $("pCheck").textContent=mrz.okDob?"":"생년월일 검증 실패 가능성 있음, 확인하세요.";
   }else msg[0]='<span class="err">① 하단 코드를 읽지 못했습니다. 다시 촬영하거나 직접 입력하세요.</span>';
  }catch(e){msg[0]="① 코드 인식 실패. 직접 입력하세요."}
@@ -441,21 +521,21 @@ async function runOCR2(tok){
 $("bSave").onclick=async()=>{
  if(ocrBusy)return;
  const p={id:editId||uid(),photo:hasPhoto?cropData():keepPhoto,nameKo:$("pKo").value.trim(),nameEn:$("pEn").value.trim().toUpperCase().replace(/\s+/g," "),
-  passNo:$("pNo").value.trim().toUpperCase().replace(/\s/g,""),sex:$("pSex").value,dob:$("pDob").value,shotAt:(shotAt||new Date()).toISOString(),phone:editPhone};
+  passNo:$("pNo").value.trim().toUpperCase().replace(/\s/g,""),nat:$("pNat").value,sex:$("pSex").value,dob:$("pDob").value,shotAt:(shotAt||new Date()).toISOString(),phone:editPhone};
  if(!p.photo&&!hasPhoto)return $("ePerson").textContent="여권을 먼저 촬영하세요.";
  if(!p.nameKo&&!p.nameEn)return $("ePerson").textContent="이름(한글 또는 영문)을 입력하세요.";
  if(!p.passNo)return $("ePerson").textContent="여권번호를 입력하세요.";
  ocrToken++;
  if(p.phone===undefined)delete p.phone;
- group.persons.push(p);await draftPut(group);editPhone=undefined;
+ group.persons.push(p);await draftPut(group);editPhone=undefined;editOrig=null;
  showContact();
 };
 let editPhone;
 $("bBackEdit").onclick=async()=>{
- const p=group.persons.pop();await draftPut(group);
+ const p=group.persons.pop();editOrig=p;await draftPut(group);
  show("vPerson");editId=p.id;editPhone=p.phone;shotAt=new Date(p.shotAt);
  $("pProg").textContent=`${group.persons.length+1}/${group.total}번째 여권 (수정)`;
- $("pKo").value=p.nameKo;$("pEn").value=p.nameEn;$("pNo").value=p.passNo;$("pSex").value=p.sex;$("pDob").value=p.dob;
+ ensureNat(p.nat);$("pNat").value=p.nat||"";$("pKo").value=p.nameKo;$("pEn").value=p.nameEn;$("pNo").value=p.passNo;$("pSex").value=p.sex;$("pDob").value=p.dob;
  FIELDS.forEach(id=>$(id).dataset.touched="1");lockAll();
  $("pOcr").textContent="";$("pCheck").textContent="";$("ePerson").textContent="";
  $("pForm").classList.remove("hidden");$("pBar").classList.remove("hidden");
@@ -469,49 +549,49 @@ function showContact(){
  show("vContact");
  $("cProg").textContent=`${group.persons.length}/${group.total}번째 연락처`;
  $("cName").textContent=(p.nameKo||"")+" "+(p.nameEn?"("+p.nameEn+")":"");
- $("cPhone").value=p.phone||"";
+ setPh("cPhone",p.phone||"");
  setTimeout(()=>$("cPhone").focus(),300);
 }
 async function contactDone(v){
  group.persons[group.persons.length-1].phone=v;await draftPut(group);
  if(group.persons.length<group.total)startPerson();else showFinal();
 }
-$("bContactSave").onclick=()=>contactDone($("cPhone").value.trim());
+$("bContactSave").onclick=()=>contactDone(getPh("cPhone"));
 $("bContactSkip").onclick=()=>contactDone("");
 
 /* ---------- 마지막: 대표 예약자 ---------- */
 let repIdx=-1,repAuto="";
 function showFinal(){
- show("vFinal");repIdx=-1;repAuto="";$("fRepPhone").value="";$("eFinal").textContent="";renderFinal();
+ show("vFinal");repIdx=-1;repAuto="";setPh("fRepPhone","");$("eFinal").textContent="";renderFinal();
 }
 function renderFinal(){
- $("fList").innerHTML=group.persons.map((p,i)=>`<div class="ppw"><label class="pp${i===repIdx?" sel":""}" data-i="${i}"><input type="radio" name="rep" value="${i}"${i===repIdx?" checked":""}>${p.photo?`<img src="${p.photo}" alt="">`:`<div style="width:48px;height:64px;background:#eee;border-radius:4px"></div>`}<div><div class="nm">${esc(p.nameKo||p.nameEn)}</div><div class="note">${esc(p.nameEn)}<br>${esc(p.passNo)} · ${esc(p.sex)} · ${esc(p.dob)}<br>${esc(p.phone||"연락처 없음")}</div></div></label><button class="ppe" data-i="${i}">수정</button><div class="edbox hidden" id="ed${i}"></div></div>`).join("");
+ $("fList").innerHTML=group.persons.map((p,i)=>`<div class="ppw"><label class="pp${i===repIdx?" sel":""}" data-i="${i}"><input type="radio" name="rep" value="${i}"${i===repIdx?" checked":""}>${p.photo?`<img src="${p.photo}" alt="">`:`<div style="width:48px;height:64px;background:#eee;border-radius:4px"></div>`}<div><div class="nm">${esc(p.nameKo||p.nameEn)}</div><div class="note">${esc(p.nameEn)}<br>${esc(natLabel(p.nat))} · ${esc(p.passNo)} · ${esc(p.sex)} · ${esc(p.dob)}<br>${esc(p.phone||"연락처 없음")}</div></div></label><button class="ppe" data-i="${i}">수정</button><div class="edbox hidden" id="ed${i}"></div></div>`).join("");
  document.querySelectorAll('input[name=rep]').forEach(r=>r.onchange=()=>{
   repIdx=+r.value;document.querySelectorAll(".pp").forEach(x=>x.classList.toggle("sel",+x.dataset.i===repIdx));
-  const ph=group.persons[repIdx].phone||"";const cur=$("fRepPhone").value.trim();
-  if(!cur||cur===repAuto){$("fRepPhone").value=ph;repAuto=ph}
+  const ph=group.persons[repIdx].phone||"";const cur=getPh("fRepPhone");
+  if(!cur||cur===repAuto){setPh("fRepPhone",ph);repAuto=ph}
  });
  document.querySelectorAll(".ppe").forEach(b=>b.onclick=()=>openEdit(+b.dataset.i));
 }
 function openEdit(i){
  const p=group.persons[i],box=$("ed"+i);
  if(!box.classList.contains("hidden")){box.classList.add("hidden");return}
- box.innerHTML=`<label>한글 이름</label><input type="text" id="e_ko" value="${esc(p.nameKo)}"><label>영문 이름</label><input type="text" id="e_en" autocapitalize="characters" value="${esc(p.nameEn)}"><label>여권번호</label><input type="text" id="e_no" autocapitalize="characters" value="${esc(p.passNo)}"><label>성별</label><select id="e_sex"><option value="">선택</option><option value="M">남 (M)</option><option value="F">여 (F)</option></select><label>생년월일</label><input type="date" id="e_dob" value="${esc(p.dob)}"><label>연락처</label><input type="tel" id="e_ph" value="${esc(p.phone||"")}"><button id="e_ok">수정 저장</button><button id="e_no2" class="sec">닫기</button>`;
- box.classList.remove("hidden");$("e_sex").value=p.sex||"";
+ box.innerHTML=`<label>한글 이름</label><input type="text" id="e_ko" value="${esc(p.nameKo)}"><label>영문 이름</label><input type="text" id="e_en" autocapitalize="characters" value="${esc(p.nameEn)}"><label>국적</label><select id="e_nat">${NAT_OPTS}</select><label>여권번호</label><input type="text" id="e_no" autocapitalize="characters" value="${esc(p.passNo)}"><label>성별</label><select id="e_sex"><option value="">선택</option><option value="M">남 (M)</option><option value="F">여 (F)</option></select><label>생년월일</label><input type="date" id="e_dob" value="${esc(p.dob)}"><label>연락처</label><input type="tel" id="e_ph"><button id="e_ok">수정 저장</button><button id="e_no2" class="sec">닫기</button>`;
+ box.classList.remove("hidden");$("e_sex").value=p.sex||"";attachCC("e_ph");setPh("e_ph",p.phone||"");if(p.nat&&!NAT[p.nat])$("e_nat").insertAdjacentHTML("beforeend",`<option value="${esc(p.nat)}">${esc(p.nat)}</option>`);$("e_nat").value=p.nat||"";
  $("e_no2").onclick=()=>box.classList.add("hidden");
  $("e_ok").onclick=async()=>{
   const oldPh=p.phone||"";
-  Object.assign(p,{nameKo:$("e_ko").value.trim(),nameEn:$("e_en").value.trim().toUpperCase().replace(/\s+/g," "),passNo:$("e_no").value.trim().toUpperCase().replace(/\s/g,""),sex:$("e_sex").value,dob:$("e_dob").value,phone:$("e_ph").value.trim()});
+  Object.assign(p,{nameKo:$("e_ko").value.trim(),nameEn:$("e_en").value.trim().toUpperCase().replace(/\s+/g," "),passNo:$("e_no").value.trim().toUpperCase().replace(/\s/g,""),nat:$("e_nat").value,sex:$("e_sex").value,dob:$("e_dob").value,phone:getPh("e_ph")});
   await draftPut(group);
-  if(i===repIdx&&$("fRepPhone").value.trim()===oldPh){$("fRepPhone").value=p.phone;repAuto=p.phone}
+  if(i===repIdx&&getPh("fRepPhone")===oldPh){setPh("fRepPhone",p.phone);repAuto=p.phone}
   renderFinal();
  };
 }
 $("bUpload").onclick=async()=>{
  if(repIdx<0)return $("eFinal").textContent="대표 예약자를 선택하세요.";
- const rp=group.persons[repIdx],rep=rp.nameKo||rp.nameEn,repPhone=$("fRepPhone").value.trim();
+ const rp=group.persons[repIdx],rep=rp.nameKo||rp.nameEn,repPhone=getPh("fRepPhone");
  for(let i=0;i<group.persons.length;i++){const p=group.persons[i];
-  await qPut({...p,rep,repPhone,idx:i+1,total:group.total,phone:p.phone||""});}
+  await qPut({...p,rep,repPhone,idx:i+1,total:group.total,phone:p.phone||"",natTxt:natLabel(p.nat)});}
  await draftDel();
  show("vDone");$("dMsg").textContent=`대표 ${rep} 님 일행 ${group.total}명 저장 완료. 인터넷 연결 시 자동 전송됩니다.`;
  group=null;sync();
@@ -539,7 +619,9 @@ async function sync(){
 }
 async function updStatus(){
  if(!db)return;const n=(await qAll()).length;
- $("status").textContent=(navigator.onLine?"온라인":"오프라인")+(n?` · 대기 ${n}`:"");
+ const on=navigator.onLine;
+ const svg=`<svg viewBox="0 0 24 24" fill="none" stroke="${on?"#1b5e20":"#d32f2f"}" stroke-width="2.4" stroke-linecap="round"><path d="M2 8.8a15 15 0 0 1 20 0"/><path d="M5.4 12.6a10 10 0 0 1 13.2 0"/><path d="M8.8 16.3a5 5 0 0 1 6.4 0"/><circle cx="12" cy="19.8" r="1.4" fill="${on?"#1b5e20":"#d32f2f"}" stroke="none"/>${on?"":'<path d="M3.5 3.5l17 17" stroke-width="2.8"/>'}</svg>`;
+ $("status").innerHTML=(n?`<span>대기 ${n}</span>`:"")+`<span class="net" title="${on?"온라인":"오프라인"}">${svg}</span>`;
  if(curView==="vHome")$("sMsg").textContent=n?"":"모두 전송되었습니다.";
 }
 $("bSync").onclick=()=>{$("sMsg").textContent="전송 중...";sync()};
@@ -548,6 +630,7 @@ setInterval(sync,30000);
 
 /* ---------- 시작 ---------- */
 (async()=>{
+ $("pNat").innerHTML=NAT_OPTS;attachCC("cPhone");attachCC("fRepPhone");
  await openDB();
  if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
  if(!cfg.url||!cfg.pin)show("vSetup");else lock();

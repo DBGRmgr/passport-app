@@ -53,6 +53,25 @@ button:disabled{opacity:.5}
 .pad button{margin:0;font-size:28px;padding:18px 0;background:#f1f5f1;color:#222;border:1px solid #cfd8cf;touch-action:manipulation}
 .pad button:active{background:#c8e6c9}
 .pad button.fn{font-size:16px;background:#e0e6e0}
+.modal{position:fixed;inset:0;background:#0009;z-index:50;display:flex;align-items:center;justify-content:center;padding:12px}
+.mbox{background:#fff;border-radius:14px;width:100%;max-width:520px;max-height:92vh;display:flex;flex-direction:column;overflow:hidden}
+.mhead{padding:16px;font-weight:bold;font-size:19px;color:#b71c1c;border-bottom:1px solid #eee;text-align:center}
+.mbody{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px;flex:1;min-height:0}
+.mfoot{display:flex;gap:8px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));border-top:1px solid #eee}
+.mfoot button{margin:0}
+.dcard{border:2px solid #ddd;border-radius:10px;padding:10px;margin-bottom:10px}
+.dcard.sel{border-color:#1b5e20;background:#f1f8f1}
+.dtop{display:flex;gap:12px;align-items:center;margin-bottom:8px}
+.dtop img,.nophoto{width:96px;height:128px;object-fit:cover;border-radius:6px;background:#eee;flex:none;display:flex;align-items:center;justify-content:center;font-size:12px;color:#888}
+.badge{display:inline-block;background:#fff3cd;color:#8a6d00;border-radius:8px;padding:3px 8px;font-size:13px;margin-top:4px}
+.dt{width:100%;border-collapse:collapse;font-size:15px}
+.dt th{text-align:left;color:#666;font-weight:normal;padding:5px 6px;width:38%;vertical-align:top}
+.dt td{padding:5px 6px;word-break:break-all}
+.dt tr.hit{background:#fff3cd}
+.dt tr.hit td{font-weight:bold}
+.hint{font-size:13px;color:#8a6d00;background:#fff8e1;border-radius:6px;padding:6px 8px;margin-top:4px;display:flex;align-items:center;gap:8px;justify-content:space-between}
+.hint button{width:auto;margin:0;padding:6px 10px;font-size:13px;background:#fff;color:#8a6d00;border:1px solid #c9a227}
+.oldtag{display:inline-block;background:#e3f2fd;color:#0d47a1;border-radius:8px;padding:2px 8px;font-size:12px;margin-left:6px}
 .phw{display:flex;gap:6px}
 .phw select{flex:0 0 118px;width:118px;padding:12px 6px;font-size:16px}
 .phw input{flex:1;min-width:0}
@@ -186,6 +205,14 @@ button:disabled{opacity:.5}
   <button id="bUpload">저장 및 업로드</button>
  </div>
 </section>
+
+<div id="dupModal" class="modal hidden">
+ <div class="mbox">
+  <div class="mhead">기존 손님 정보가 있습니다</div>
+  <div class="mbody" id="dupBody"></div>
+  <div class="mfoot"><button id="bDupKeep">기존정보유지</button><button id="bDupNew" class="sec">신규추가</button></div>
+ </div>
+</div>
 
 <section id="vDone" class="hidden">
  <div class="card"><b>접수 완료</b><div id="dMsg" class="note"></div><button id="bAgain">새 접수</button></div>
@@ -336,7 +363,7 @@ document.querySelectorAll(".ed").forEach(b=>b.onclick=()=>{const id=b.dataset.f,
 function autoSet(id,v){if(!v||$(id).dataset.touched==="1")return;if(id==="pNat")ensureNat(v);$(id).value=v}
 function setBusy(b){ocrBusy=b;$("bSave").disabled=b;$("bSave").textContent=b?"인식 중... 잠시만 기다려 주세요":"확인 완료, 다음"}
 function startPerson(){
- ocrToken++;setBusy(false);editId=null;keepPhoto="";
+ ocrToken++;setBusy(false);editId=null;keepPhoto="";curUpd=null;curRej=[];curOld=null;clearHints();
  show("vPerson");
  $("pProg").textContent=`${group.persons.length+1}/${group.total}번째 여권`;
  ["pCrop","pForm","pBar","pCropOld"].forEach(x=>$(x).classList.add("hidden"));
@@ -347,7 +374,7 @@ function startPerson(){
 $("bShot").onclick=()=>$("fFile").click();
 $("fFile").onchange=async e=>{
  const f=e.target.files[0];if(!f)return;
- shotAt=new Date();keepPhoto="";$("pCropOld").classList.add("hidden");
+ shotAt=new Date();keepPhoto="";$("pCropOld").classList.add("hidden");curUpd=null;curRej=[];curOld=null;clearHints();
  FIELDS.forEach(id=>{delete $(id).dataset.touched});
  $("pOcr").textContent="사진 처리 중...";
  const bmp=await createImageBitmap(f,{imageOrientation:"from-image"}).catch(()=>createImageBitmap(f));
@@ -517,15 +544,78 @@ async function runOCR2(tok){
  say();
 }
 
+/* ---------- 중복 확인 ---------- */
+let curUpd=null,curRej=[],curOld=null,dupBusy=false;
+FIELDS.forEach(id=>{const h=document.createElement("div");h.className="hint hidden";h.id="h_"+id;$("r_"+id).appendChild(h)});
+function clearHints(){FIELDS.forEach(id=>{$("h_"+id).classList.add("hidden");$("h_"+id).innerHTML=""})}
+const natCode=t=>{const m=String(t||"").match(/\(([A-Z]{1,3})\)/);return m?m[1]:String(t||"").trim()};
+async function lookup(q){
+ if(!navigator.onLine||!cfg.url)return null;
+ for(let t=0;t<2;t++){try{
+  const ac=new AbortController(),tm=setTimeout(()=>ac.abort(),15000);
+  const qs=new URLSearchParams({action:"lookup",key:cfg.key,nameKo:q.nameKo||"",passNo:q.passNo||"",phone:q.phone||"",t:Date.now()});
+  const r=await fetch(cfg.url+"?"+qs,{signal:ac.signal});
+  clearTimeout(tm);const j=JSON.parse(await r.text());if(j.ok)return j.matches||[];return null}catch(e){}}
+ return null;
+}
+function showDup(ms){return new Promise(res=>{
+ let sel=0;
+ const F=[["한글 이름","nameKo"],["영문 이름","nameEn"],["국적","nat"],["여권번호","passNo"],["성별","sex"],["생년월일","dob"],["연락처","phone"],["대표 예약자명","rep"],["대표자 연락처","repPhone"],["최근 기록일시","when"]];
+ const MK={"한글이름":"nameKo","여권번호":"passNo","연락처":"phone"};
+ $("dupBody").innerHTML=(ms.length>1?`<div class="note" style="margin:0 0 10px">비슷한 기록이 ${ms.length}건 있습니다. 해당 손님을 눌러 선택하세요.</div>`:"")+ms.map((m,i)=>{
+  const hit=new Set((m.match||[]).map(x=>MK[x]));
+  return `<div class="dcard${i===0?" sel":""}" data-i="${i}"><div class="dtop">${m.photo?`<img src="${m.photo}" alt="">`:`<div class="nophoto">사진 없음</div>`}<div><div class="nm" style="font-size:20px;font-weight:bold">${esc(m.nameKo||m.nameEn)}</div><div class="badge">일치: ${esc((m.match||[]).join(", "))}</div></div></div><table class="dt">${F.map(([l,k])=>`<tr class="${hit.has(k)?"hit":""}"><th>${l}</th><td>${esc(k==="sex"?({M:"남 (M)",F:"여 (F)"}[m[k]]||m[k]||"-"):(m[k]||"-"))}</td></tr>`).join("")}</table></div>`}).join("");
+ $("dupBody").querySelectorAll(".dcard").forEach(c=>c.onclick=()=>{sel=+c.dataset.i;$("dupBody").querySelectorAll(".dcard").forEach(x=>x.classList.toggle("sel",x===c))});
+ $("dupBody").scrollTop=0;$("dupModal").classList.remove("hidden");document.body.style.overflow="hidden";
+ const close=v=>{$("dupModal").classList.add("hidden");document.body.style.overflow="";res(v)};
+ $("bDupKeep").onclick=()=>close({keep:true,match:ms[sel]});
+ $("bDupNew").onclick=()=>close({keep:false});
+})}
+async function dupCheck(q,saveBtn,label){
+ const old=saveBtn.textContent;saveBtn.disabled=true;saveBtn.textContent="기존 손님 확인 중...";dupBusy=true;
+ try{
+  const ms=await lookup(q);
+  if(ms===null)return{offline:true};
+  const list=ms.filter(m=>m.id!==curUpd&&!curRej.includes(m.id));
+  if(!list.length)return{};
+  const r=await showDup(list);
+  if(!r.keep)curRej.push(...list.map(m=>m.id));
+  return r;
+ }finally{saveBtn.disabled=false;saveBtn.textContent=old;dupBusy=false}
+}
+function applyExisting(m,scan){
+ curUpd=m.id;curOld=m;
+ const vals={pKo:m.nameKo,pEn:m.nameEn,pNat:natCode(m.nat),pNo:m.passNo,pSex:m.sex,pDob:m.dob};
+ FIELDS.forEach(id=>{const v=vals[id]||"";if(id==="pNat")ensureNat(v);$(id).value=v;$(id).dataset.touched="1"});
+ lockAll();clearHints();
+ const disp={pNat:natLabel,pSex:v=>({M:"남 (M)",F:"여 (F)"}[v]||v)};
+ FIELDS.forEach(id=>{const nv=scan[id];if(nv&&nv!==(vals[id]||"")){const h=$("h_"+id);
+  h.innerHTML=`<span>이번 촬영: <b>${esc((disp[id]||(x=>x))(nv))}</b></span><button type="button">이 값으로 바꾸기</button>`;h.classList.remove("hidden");
+  h.querySelector("button").onclick=()=>{if(id==="pNat")ensureNat(nv);$(id).value=nv;lockAll();h.classList.add("hidden")}}});
+ $("pOcr").innerHTML=`<span class="ok"><b>기존 손님 정보를 불러왔습니다.</b> (최근 기록 ${esc(m.when||"")}, 대표 ${esc(m.rep||"")})<br>노란 칸은 이번 촬영과 다른 부분입니다. 확인 후 필요하면 바꾸세요.</span>`;
+ $("pForm").classList.remove("hidden");$("pBar").classList.remove("hidden");window.scrollTo(0,0);
+}
+const scanVals=()=>{const o={};FIELDS.forEach(id=>o[id]=$(id).value.trim());return o};
+
 /* 여권 정보 저장 -> 연락처 화면 */
 $("bSave").onclick=async()=>{
- if(ocrBusy)return;
+ if(ocrBusy||dupBusy)return;
  const p={id:editId||uid(),photo:hasPhoto?cropData():keepPhoto,nameKo:$("pKo").value.trim(),nameEn:$("pEn").value.trim().toUpperCase().replace(/\s+/g," "),
   passNo:$("pNo").value.trim().toUpperCase().replace(/\s/g,""),nat:$("pNat").value,sex:$("pSex").value,dob:$("pDob").value,shotAt:(shotAt||new Date()).toISOString(),phone:editPhone};
  if(!p.photo&&!hasPhoto)return $("ePerson").textContent="여권을 먼저 촬영하세요.";
  if(!p.nameKo&&!p.nameEn)return $("ePerson").textContent="이름(한글 또는 영문)을 입력하세요.";
  if(!p.passNo)return $("ePerson").textContent="여권번호를 입력하세요.";
+ $("ePerson").textContent="";
+ const same=group.persons.find(x=>x.passNo===p.passNo);
+ if(same&&!confirm(`이번 접수에 같은 여권번호(${p.passNo})의 손님(${same.nameKo||same.nameEn})이 이미 있습니다. 그래도 추가할까요?`))return;
+ let unchecked=false;
+ if(!curUpd){
+  const r=await dupCheck({nameKo:p.nameKo,passNo:p.passNo},$("bSave"));
+  if(r.offline)unchecked=true;
+  if(r.keep){const sc=scanVals();applyExisting(r.match,sc);if(r.match.phone&&editPhone===undefined)editPhone=r.match.phone;return}
+ }
  ocrToken++;
+ Object.assign(p,{updateId:curUpd||undefined,rejected:[...curRej],dupUnchecked:unchecked||undefined});
  if(p.phone===undefined)delete p.phone;
  group.persons.push(p);await draftPut(group);editPhone=undefined;editOrig=null;
  showContact();
@@ -533,11 +623,11 @@ $("bSave").onclick=async()=>{
 let editPhone;
 $("bBackEdit").onclick=async()=>{
  const p=group.persons.pop();editOrig=p;await draftPut(group);
- show("vPerson");editId=p.id;editPhone=p.phone;shotAt=new Date(p.shotAt);
+ show("vPerson");editId=p.id;editPhone=p.phone;shotAt=new Date(p.shotAt);curUpd=p.updateId||null;curRej=p.rejected||[];clearHints();
  $("pProg").textContent=`${group.persons.length+1}/${group.total}번째 여권 (수정)`;
  ensureNat(p.nat);$("pNat").value=p.nat||"";$("pKo").value=p.nameKo;$("pEn").value=p.nameEn;$("pNo").value=p.passNo;$("pSex").value=p.sex;$("pDob").value=p.dob;
  FIELDS.forEach(id=>$(id).dataset.touched="1");lockAll();
- $("pOcr").textContent="";$("pCheck").textContent="";$("ePerson").textContent="";
+ $("pOcr").innerHTML=curUpd?'<span class="ok">기존 손님 정보로 진행 중입니다.</span>':"";$("pCheck").textContent="";$("ePerson").textContent="";
  $("pForm").classList.remove("hidden");$("pBar").classList.remove("hidden");
  if(hasPhoto&&srcCanvas.width){$("pCrop").classList.remove("hidden");$("pCropOld").classList.add("hidden");requestAnimationFrame(layoutBox)}
  else{hasPhoto=false;keepPhoto=p.photo;$("pCrop").classList.add("hidden");if(p.photo){$("oldFace").src=p.photo;$("pCropOld").classList.remove("hidden")}}
@@ -548,16 +638,32 @@ function showContact(){
  const p=group.persons[group.persons.length-1];
  show("vContact");
  $("cProg").textContent=`${group.persons.length}/${group.total}번째 연락처`;
- $("cName").textContent=(p.nameKo||"")+" "+(p.nameEn?"("+p.nameEn+")":"");
+ $("cName").innerHTML=esc((p.nameKo||"")+" "+(p.nameEn?"("+p.nameEn+")":""))+(p.updateId?'<span class="oldtag">기존 손님</span>':"");
  setPh("cPhone",p.phone||"");
  setTimeout(()=>$("cPhone").focus(),300);
 }
 async function contactDone(v){
- group.persons[group.persons.length-1].phone=v;await draftPut(group);
+ const p=group.persons[group.persons.length-1];
+ if(v&&!dupBusy){
+  curUpd=p.updateId||null;curRej=p.rejected||[];
+  const r=await dupCheck({phone:v},$("bContactSave"));
+  if(r.offline)p.dupUnchecked=true;
+  if(r.keep){ // 연락처로 기존 손님 확인 -> 여권 화면으로 돌아가 기존 정보 불러오기
+   const sc={pKo:p.nameKo,pEn:p.nameEn,pNat:p.nat,pNo:p.passNo,pSex:p.sex,pDob:p.dob};
+   group.persons.pop();editOrig=null;await draftPut(group);
+   show("vPerson");editId=p.id;editPhone=v;shotAt=new Date(p.shotAt);curRej=p.rejected||[];
+   $("pProg").textContent=`${group.persons.length+1}/${group.total}번째 여권`;
+   if(!(hasPhoto&&srcCanvas.width)){hasPhoto=false;keepPhoto=p.photo;if(p.photo){$("oldFace").src=p.photo;$("pCropOld").classList.remove("hidden")}}
+   else{$("pCrop").classList.remove("hidden");requestAnimationFrame(layoutBox)}
+   applyExisting(r.match,sc);return;
+  }
+  p.rejected=[...curRej];
+ }
+ p.phone=v;await draftPut(group);
  if(group.persons.length<group.total)startPerson();else showFinal();
 }
-$("bContactSave").onclick=()=>contactDone(getPh("cPhone"));
-$("bContactSkip").onclick=()=>contactDone("");
+$("bContactSave").onclick=()=>{if(!dupBusy)contactDone(getPh("cPhone"))};
+$("bContactSkip").onclick=()=>{if(!dupBusy)contactDone("")};
 
 /* ---------- 마지막: 대표 예약자 ---------- */
 let repIdx=-1,repAuto="";
@@ -565,7 +671,7 @@ function showFinal(){
  show("vFinal");repIdx=-1;repAuto="";setPh("fRepPhone","");$("eFinal").textContent="";renderFinal();
 }
 function renderFinal(){
- $("fList").innerHTML=group.persons.map((p,i)=>`<div class="ppw"><label class="pp${i===repIdx?" sel":""}" data-i="${i}"><input type="radio" name="rep" value="${i}"${i===repIdx?" checked":""}>${p.photo?`<img src="${p.photo}" alt="">`:`<div style="width:48px;height:64px;background:#eee;border-radius:4px"></div>`}<div><div class="nm">${esc(p.nameKo||p.nameEn)}</div><div class="note">${esc(p.nameEn)}<br>${esc(natLabel(p.nat))} · ${esc(p.passNo)} · ${esc(p.sex)} · ${esc(p.dob)}<br>${esc(p.phone||"연락처 없음")}</div></div></label><button class="ppe" data-i="${i}">수정</button><div class="edbox hidden" id="ed${i}"></div></div>`).join("");
+ $("fList").innerHTML=group.persons.map((p,i)=>`<div class="ppw"><label class="pp${i===repIdx?" sel":""}" data-i="${i}"><input type="radio" name="rep" value="${i}"${i===repIdx?" checked":""}>${p.photo?`<img src="${p.photo}" alt="">`:`<div style="width:48px;height:64px;background:#eee;border-radius:4px"></div>`}<div><div class="nm">${esc(p.nameKo||p.nameEn)}${p.updateId?'<span class="oldtag">기존 손님</span>':""}${p.dupUnchecked?'<span class="oldtag" style="background:#ffebee;color:#b71c1c">중복확인 못함</span>':""}</div><div class="note">${esc(p.nameEn)}<br>${esc(natLabel(p.nat))} · ${esc(p.passNo)} · ${esc(p.sex)} · ${esc(p.dob)}<br>${esc(p.phone||"연락처 없음")}</div></div></label><button class="ppe" data-i="${i}">수정</button><div class="edbox hidden" id="ed${i}"></div></div>`).join("");
  document.querySelectorAll('input[name=rep]').forEach(r=>r.onchange=()=>{
   repIdx=+r.value;document.querySelectorAll(".pp").forEach(x=>x.classList.toggle("sel",+x.dataset.i===repIdx));
   const ph=group.persons[repIdx].phone||"";const cur=getPh("fRepPhone");
@@ -611,7 +717,10 @@ async function sync(){
   const all=(await qAll()).sort((a,b)=>(a.shotAt+a.idx)<(b.shotAt+b.idx)?-1:1);
   for(const r of all){
    let j=null;
-   for(let t=0;t<2&&!j;t++){try{const resp=await fetch(cfg.url,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({key:cfg.key,rec:{...r,err:undefined}})});j=JSON.parse(await resp.text())}catch(e){}}
+   for(let t=0;t<2&&!j;t++){
+    try{const resp=await fetch(cfg.url,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({key:cfg.key,rec:{...r,err:undefined,rejected:undefined,dupUnchecked:undefined}})});j=JSON.parse(await resp.text())}catch(e){}
+    if(!j){try{const c=await fetch(cfg.url+"?"+new URLSearchParams({action:"check",key:cfg.key,id:r.id,t:Date.now()}));const cj=JSON.parse(await c.text());if(cj.ok&&cj.saved)j={ok:true}}catch(e){}}
+   }
    if(!j)break;
    if(j.ok)await qDel(r.id);else{r.err=j.error==="auth"?"키 오류":"서버 오류";await qPut(r);break}
   }

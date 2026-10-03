@@ -345,7 +345,7 @@ async function home(){
 $("bStart").onclick=async()=>{
  const d=await draftGet();
  if(d&&!confirm("진행 중인 접수를 버리고 새로 시작할까요?"))return;
- group={total:parseInt($("hCount").value,10),persons:[],startedAt:new Date().toISOString()};
+ group={gid:uid(),total:parseInt($("hCount").value,10),persons:[],startedAt:new Date().toISOString()};
  await draftPut(group);startPerson();
 };
 $("bResume").onclick=async()=>{group=await draftGet();if(!group)return home();resumeGroup()};
@@ -732,7 +732,7 @@ $("bUpload").onclick=async()=>{
  if(repIdx<0)return $("eFinal").textContent="대표 예약자를 선택하세요.";
  const rp=group.persons[repIdx],rep=rp.nameKo||rp.nameEn,repPhone=getPh("fRepPhone");
  for(let i=0;i<group.persons.length;i++){const p=group.persons[i];
-  await qPut({...p,rep,repPhone,idx:i+1,total:group.total,phone:p.phone||"",natTxt:natLabel(p.nat),
+  await qPut({...p,rep,repPhone,idx:i+1,total:group.total,phone:p.phone||"",natTxt:natLabel(p.nat),gid:group.gid||group.startedAt,gStart:group.startedAt,
    staff:curStaff?`${curStaff.name} ${curStaff.title}`:"",staffH:curStaff?curStaff.h:""});}
  await draftDel();
  const n=group.total;group=null;sync();

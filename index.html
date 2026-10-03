@@ -17,6 +17,7 @@ body{margin:0;font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",san
 header{background:#1b5e20;color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:5}
 header h1{font-size:18px;margin:0}
 #status{display:flex;align-items:center;gap:6px;font-size:13px}
+.who{font-size:13px;opacity:.9;margin-top:2px}
 .net{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:50%;background:#fff}
 .net svg{width:28px;height:28px}
 main{padding:14px 14px 130px;max-width:560px;margin:0 auto}
@@ -87,19 +88,16 @@ button:disabled{opacity:.5}
 </style>
 </head>
 <body>
-<header><h1 id="hTitle">손님 여권 접수 화면</h1><div id="status"></div></header>
+<header><div><h1 id="hTitle">손님 여권 접수 화면</h1><div id="who" class="who"></div></div><div id="status"></div></header>
 <main>
 
 <!-- 최초 설정 -->
 <section id="vSetup" class="hidden">
  <div class="card">
   <b>최초 설정 (관리자 1회)</b>
-  <label>Apps Script 웹앱 주소</label>
-  <input type="text" id="sUrl" placeholder="https://script.google.com/macros/s/.../exec">
   <label>비밀 키</label>
-  <input type="password" id="sKey">
-  <label>앱 잠금 PIN (숫자 4~6자리)</label>
-  <input type="password" id="sPin" inputmode="numeric" maxlength="6">
+  <input type="password" id="sKey" autocomplete="off">
+  <div class="note">인터넷이 연결된 상태에서 입력하세요. 직원 명단을 함께 받아옵니다.</div>
   <button id="bSetup">저장</button>
   <div id="eSetup" class="err"></div>
  </div>
@@ -108,7 +106,8 @@ button:disabled{opacity:.5}
 <!-- 잠금 -->
 <section id="vLock" class="hidden">
  <div class="card" style="text-align:center">
-  <b style="font-size:19px">PIN 입력</b>
+  <div id="lockMsg" class="ok hidden" style="background:#e8f5e9;border-radius:8px;padding:10px;margin-bottom:12px;font-size:15px"></div>
+  <b style="font-size:19px">직원 PIN 입력</b>
   <div id="pinDots" class="dots"></div>
   <div id="eLock" class="err" style="min-height:20px"></div>
   <div id="pad" class="pad"></div>
@@ -226,7 +225,10 @@ const $=id=>document.getElementById(id);
 const VIEWS=["vSetup","vLock","vHome","vPerson","vContact","vFinal","vDone"];
 let curView="";
 const show=v=>{VIEWS.forEach(x=>$(x).classList.add("hidden"));$(v).classList.remove("hidden");curView=v;window.scrollTo(0,0)};
-const cfg={get url(){return localStorage.getItem("url")||""},get key(){return localStorage.getItem("key")||""},get pin(){return localStorage.getItem("pinh")||""}};
+const API_URL="https://script.google.com/macros/s/AKfycbypIjrmE7vqrCUH2DNiwfushbXljDtrb9iE-sREI-whOdocHz3Q5fHskQ5u8ll4vsbGAg/exec";
+const cfg={get url(){return API_URL},get key(){return localStorage.getItem("key")||""}};
+const getStaff=()=>{try{return JSON.parse(localStorage.getItem("staff")||"[]")}catch(e){return[]}};
+let curStaff=null;
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 /* ---------- 국가 목록 (ISO2|ISO3|이름|국제전화코드) ---------- */
 const TOP="KR|KOR|대한민국|82,US|USA|미국|1,CA|CAN|캐나다|1,AU|AUS|호주|61,NZ|NZL|뉴질랜드|64,JP|JPN|일본|81,CN|CHN|중국|86,MY|MYS|말레이시아|60,SG|SGP|싱가포르|65,GB|GBR|영국|44,DE|DEU|독일|49,FR|FRA|프랑스|33,TW|TWN|대만|886,HK|HKG|홍콩|852,PH|PHL|필리핀|63,VN|VNM|베트남|84,TH|THA|태국|66,ID|IDN|인도네시아|62";
@@ -271,7 +273,10 @@ let unlocked=false,lastActive=Date.now();
 ["click","touchstart","keydown"].forEach(e=>document.addEventListener(e,()=>lastActive=Date.now()));
 setInterval(()=>{if(unlocked&&(curView==="vHome"||curView==="vDone")&&Date.now()-lastActive>5*60000)lock()},15000);
 let pinBuf="",pinFails=0,pinWaitUntil=0;
-function lock(){unlocked=false;pinBuf="";$("eLock").textContent="";renderPad();renderDots();show("vLock")}
+function lock(msg){unlocked=false;curStaff=null;$("who").textContent="";pinBuf="";$("eLock").textContent="";
+ if(msg){$("lockMsg").textContent=msg;$("lockMsg").classList.remove("hidden")}else $("lockMsg").classList.add("hidden");
+ if(!getStaff().length)$("eLock").textContent="직원 명단이 없습니다. 인터넷에 연결된 상태에서 앱을 다시 여세요.";
+ renderPad();renderDots();show("vLock")}
 function rnd(n){const a=new Uint32Array(1);crypto.getRandomValues(a);return a[0]%n}
 function renderPad(){
  const d=[0,1,2,3,4,5,6,7,8,9];for(let i=d.length-1;i>0;i--){const j=rnd(i+1);[d[i],d[j]]=[d[j],d[i]]}
@@ -279,36 +284,52 @@ function renderPad(){
  $("pad").innerHTML=keys.map(k=>`<button type="button" class="${/\d/.test(k)?"":"fn"}" data-k="${k}">${k}</button>`).join("");
  $("pad").querySelectorAll("button").forEach(b=>b.onclick=()=>padKey(b.dataset.k));
 }
-function renderDots(){const L=+localStorage.getItem("pinlen")||0,n=Math.max(L||4,pinBuf.length);
+const pinLens=()=>{const l=getStaff().map(s=>s.len).filter(Boolean);return l.length?l:[4]};
+function renderDots(){const n=Math.max(Math.min(...pinLens()),pinBuf.length);
  $("pinDots").innerHTML=Array.from({length:n},(_,i)=>`<span class="${i<pinBuf.length?"f":""}"></span>`).join("")}
 async function padKey(k){
  if(Date.now()<pinWaitUntil){$("eLock").textContent=`잠시 후 다시 시도하세요 (${Math.ceil((pinWaitUntil-Date.now())/1000)}초)`;return}
  if(k==="지움")pinBuf=pinBuf.slice(0,-1);
- else if(k==="확인")return tryPin();
+ else if(k==="확인")return tryPin(true);
  else if(pinBuf.length<6)pinBuf+=k;
  renderDots();
- const L=+localStorage.getItem("pinlen")||0;if(L&&pinBuf.length===L)tryPin();
+ if(pinLens().includes(pinBuf.length))tryPin(pinBuf.length>=Math.max(...pinLens()));
 }
-async function tryPin(){
+async function tryPin(final){
  if(pinBuf.length<4){$("eLock").textContent="PIN 4~6자리를 누르세요.";return}
- if(await sha(pinBuf)===cfg.pin){localStorage.setItem("pinlen",pinBuf.length);pinFails=0;unlocked=true;pinBuf="";home()}
- else{pinFails++;pinBuf="";$("eLock").textContent="PIN이 틀렸습니다.";
-  if(pinFails>=5){pinWaitUntil=Date.now()+30000;pinFails=0;$("eLock").textContent="5회 틀려서 30초간 잠깁니다."}
-  renderPad();renderDots()}
+ const h=await sha(pinBuf),st=getStaff().find(x=>x.h===h&&x.len===pinBuf.length);
+ if(st){pinFails=0;unlocked=true;pinBuf="";curStaff=st;$("who").textContent=`접수자: ${st.name} ${st.title}`;home();return}
+ if(!final)return;
+ pinFails++;pinBuf="";$("eLock").textContent="PIN이 틀렸습니다.";$("lockMsg").classList.add("hidden");
+ if(pinFails>=5){pinWaitUntil=Date.now()+30000;pinFails=0;$("eLock").textContent="5회 틀려서 30초간 잠깁니다."}
+ renderPad();renderDots();
+}
+// 직원 명단 받기 (인터넷 연결 시)
+async function refreshStaff(){
+ if(!navigator.onLine||!cfg.key)return false;
+ const j=await hedgedGet({action:"staff"},{tries:3,gap:4000,total:25000});
+ if(j&&Array.isArray(j.staff)){localStorage.setItem("staff",JSON.stringify(j.staff));localStorage.setItem("staffAt",Date.now());
+  if(curStaff&&!j.staff.find(x=>x.h===curStaff.h))lock("직원 명단이 바뀌어 다시 PIN을 입력해야 합니다.");
+  else if(curView==="vLock"){if(!pinBuf)$("eLock").textContent="";renderDots()}
+  return true}
+ return false;
 }
 $("bSetup").onclick=async()=>{
- const u=$("sUrl").value.trim(),k=$("sKey").value.trim(),p=$("sPin").value.trim();
- if(!/^https:\/\/script\.google\.com\//.test(u))return $("eSetup").textContent="주소가 올바르지 않습니다.";
+ const k=$("sKey").value.trim();
  if(k.length<8)return $("eSetup").textContent="비밀 키를 확인하세요.";
- if(!/^\d{4,6}$/.test(p))return $("eSetup").textContent="PIN은 숫자 4~6자리.";
- localStorage.setItem("url",u);localStorage.setItem("key",k);localStorage.setItem("pinh",await sha(p));localStorage.setItem("pinlen",p.length);
- unlocked=true;home();
+ if(!navigator.onLine)return $("eSetup").textContent="인터넷 연결이 필요합니다.";
+ $("bSetup").disabled=true;$("eSetup").textContent="";$("bSetup").textContent="확인 중...";
+ localStorage.setItem("key",k);
+ const ok=await refreshStaff();
+ $("bSetup").disabled=false;$("bSetup").textContent="저장";
+ if(!ok){localStorage.removeItem("key");return $("eSetup").textContent="비밀 키가 틀렸거나 연결이 불안정합니다. 다시 시도하세요."}
+ lock();
 };
 $("bLogout").onclick=lock;
 // 관리자 전용: 제목을 3초간 누르면 설정 초기화 (비밀키/주소/PIN 변경 시)
 let lpT=null;$("hTitle").addEventListener("pointerdown",()=>{lpT=setTimeout(resetAll,3000)});["pointerup","pointerleave","pointercancel"].forEach(ev=>$("hTitle").addEventListener(ev,()=>clearTimeout(lpT)));
-async function resetAll(){if(!cfg.pin)return;const p=prompt("설정 초기화: 현재 PIN 입력 (전송 안 된 데이터는 삭제됩니다)");
- if(p&&await sha(p)===cfg.pin){localStorage.clear();for(const r of await qAll())await qDel(r.id);await draftDel();location.reload()}}
+async function resetAll(){if(!cfg.key)return;const p=prompt("설정 초기화 (관리자 PIN 입력). 전송 안 된 데이터는 삭제됩니다.");if(!p)return;const h=await sha(p);
+ if(getStaff().find(x=>x.admin&&x.h===h)){localStorage.clear();for(const r of await qAll())await qDel(r.id);await draftDel();location.reload()}}
 
 /* ---------- 홈 ---------- */
 for(let i=1;i<=30;i++){const o=document.createElement("option");o.value=i;o.textContent=i+"명";$("hCount").appendChild(o)}
@@ -568,7 +589,7 @@ async function lookup(q){
 }
 function showDup(ms){return new Promise(res=>{
  let sel=0;
- const F=[["한글 이름","nameKo"],["영문 이름","nameEn"],["국적","nat"],["여권번호","passNo"],["성별","sex"],["생년월일","dob"],["연락처","phone"],["대표 예약자명","rep"],["대표자 연락처","repPhone"],["최근 기록일시","when"]];
+ const F=[["한글 이름","nameKo"],["영문 이름","nameEn"],["국적","nat"],["여권번호","passNo"],["성별","sex"],["생년월일","dob"],["연락처","phone"],["대표 예약자명","rep"],["대표자 연락처","repPhone"],["최근 기록일시","when"],["접수 직원","staff"]];
  const MK={"한글이름":"nameKo","여권번호":"passNo","연락처":"phone"};
  $("dupBody").innerHTML=(ms.length>1?`<div class="note" style="margin:0 0 10px">비슷한 기록이 ${ms.length}건 있습니다. 해당 손님을 눌러 선택하세요.</div>`:"")+ms.map((m,i)=>{
   const hit=new Set((m.match||[]).map(x=>MK[x]));
@@ -711,10 +732,11 @@ $("bUpload").onclick=async()=>{
  if(repIdx<0)return $("eFinal").textContent="대표 예약자를 선택하세요.";
  const rp=group.persons[repIdx],rep=rp.nameKo||rp.nameEn,repPhone=getPh("fRepPhone");
  for(let i=0;i<group.persons.length;i++){const p=group.persons[i];
-  await qPut({...p,rep,repPhone,idx:i+1,total:group.total,phone:p.phone||"",natTxt:natLabel(p.nat)});}
+  await qPut({...p,rep,repPhone,idx:i+1,total:group.total,phone:p.phone||"",natTxt:natLabel(p.nat),
+   staff:curStaff?`${curStaff.name} ${curStaff.title}`:"",staffH:curStaff?curStaff.h:""});}
  await draftDel();
- show("vDone");$("dMsg").textContent=`대표 ${rep} 님 일행 ${group.total}명 저장 완료. 인터넷 연결 시 자동 전송됩니다.`;
- group=null;sync();
+ const n=group.total;group=null;sync();
+ lock(`접수 완료: 대표 ${rep} 님 일행 ${n}명 저장됨 (인터넷 연결 시 자동 전송). 다음 접수는 PIN을 입력하세요.`);
 };
 
 /* ---------- 동기화 ---------- */
@@ -756,8 +778,11 @@ setInterval(sync,30000);
  $("pNat").innerHTML=NAT_OPTS;attachCC("cPhone");attachCC("fRepPhone");
  await openDB();
  if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
- if(!cfg.url||!cfg.pin)show("vSetup");else lock();
+ ["url","pinh","pinlen"].forEach(k=>localStorage.removeItem(k)); // 이전 버전 설정 정리
+ if(!cfg.key)show("vSetup");else{lock();refreshStaff()}
  updStatus();
+ setInterval(()=>{if(Date.now()-(+localStorage.getItem("staffAt")||0)>10*60000)refreshStaff()},60000);
+ window.addEventListener("online",refreshStaff);
 })();
 </script>
 </body>

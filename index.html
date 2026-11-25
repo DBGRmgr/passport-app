@@ -859,7 +859,7 @@ async function camOpenImg(f){
  camLoop();
 }
 function camFit(){const ci=$("camI"),G=cam.G||camCalc(),ew=$("cam").clientWidth;cam.z=ew/ci.width;cam.tx=0;cam.ty=G.gy+G.gh/2-ci.height*cam.z/2;camImgApply()}
-function camImgApply(){if(!cam||!cam.img)return;$("camI").style.transform=`translate(${cam.tx}px,${cam.ty}px) scale(${cam.z})`;camDraw()}
+function camImgApply(){if(!cam||!cam.img)return;cam.fbOff=null;$("camI").style.transform=`translate(${cam.tx}px,${cam.ty}px) scale(${cam.z})`;camDraw()}
 const camPtr=new Map();
 $("camI").addEventListener("pointerdown",e=>{camPtr.set(e.pointerId,{x:e.clientX,y:e.clientY});try{$("camI").setPointerCapture(e.pointerId)}catch(x){}e.preventDefault()});
 $("camI").addEventListener("pointermove",e=>{
@@ -887,7 +887,7 @@ function camGrab(){ // 테두리 안(+여유 8%) 화면을 잘라서 캔버스�
  sx=Math.max(0,sx);sy=Math.max(0,sy);sw=Math.min(vw-sx,sw);sh=Math.min(vh-sy,sh);if(sw<50||sh<50)return null;
  const k=Math.min(1,1800/sw),c=document.createElement("canvas");c.width=Math.round(sw*k);c.height=Math.round(sh*k);
  c.getContext("2d").drawImage(v,sx,sy,sw,sh,0,0,c.width,c.height);
- return{c,map:{sx,sy,k,G},ppm:G.gw/G.s*k/PG.w,top:((G.gy-G.oy)/G.s-sy)*k};
+ return{c,map:{sx,sy,k,G},ppm:G.gw/G.s*k/PG.w,top:((G.gy-G.oy)/G.s-sy)*k,left:((G.gx-G.ox)/G.s-sx)*k};
 }
 async function camCycle(me){
  if(!me.img){const v=$("camV");if(!v.videoWidth||v.readyState<2)return}
@@ -927,6 +927,10 @@ async function camCycle(me){
   }
  }
  // 가장 잘 읽힌 장면(점수 높은 하단 코드, 한글 이름 일치)을 저장용 사진으로 보관
+ if(!geo&&!B&&me.fails>=5){ // 하단 2줄이 5번 넘게 안 읽히면: 테두리 위치 기준으로 각 칸을 따로 읽기 (노란색 = 검증 안 됨)
+  const fg=await camFallback(me,F,pc);if(cam!==me){freeC(pc);return}
+  if(fg&&(!me.best||me.best.q<=0)){const q=Object.keys(me.fb).length/100;if(!me.best||q>me.best.q){if(me.best)freeC(me.best.c);me.best={c:pc,geo:fg,q};keep=true}}
+ }
  if(geo){const q=p.score*10+(koHit?5:0)+(p.okName?2:0);if(!me.best||q>me.best.q){if(me.best)freeC(me.best.c);me.best={c:pc,geo,q};keep=true}}
  if(!keep)freeC(pc);
 }
@@ -940,10 +944,70 @@ async function camMrzRefine(me,pc,g1,g2){
   return{cx:cx+X*co-Y*si,cy:cy+X*si+Y*co,w:g.w/sc2,h:g.h/sc2,ang:ang+g.ang}};
  return{p:pk.p,g1:back(ls[pk.i]),g2:back(ls[pk.i+1])};
 }
+// 하단 코드 없이 각 칸 읽기: 노란 테두리 = 여권 사진면(125×88mm)이라고 보고 칸 위치 계산
+const FBZ={new:{pNo:[68,100,58.1],sur:[36,95,52.2],giv:[36,95,46.9],pDob:[36,70,29.4],pSex:[72,82,29],pNat:[36,80,23.5]},
+ old:{pNo:[80,112,62],sur:[36,85,56.8],giv:[36,85,51.4],pNat:[36,85,46],pDob:[36,75,40.3],pSex:[36,46,34.2]}};
+const MON={JAN:"01",FEB:"02",MAR:"03",APR:"04",MAY:"05",JUN:"06",JUL:"07",AUG:"08",SEP:"09",OCT:"10",NOV:"11",DEC:"12"};
+function fbParse(k,t){t=String(t||"").toUpperCase().replace(/\n/g," ");
+ if(k==="pNo"){const m=t.replace(/[^A-Z0-9]/g,"").match(/[MSRGDT][0-9OIS]{3}[A-Z0-9][0-9OIS]{4}/);if(!m)return"";const v=m[0];return v[0]+v.slice(1).replace(/O/g,"0").replace(/I/g,"1").replace(/S(?=\d|$)/g,"5")}
+ if(k==="sur"||k==="giv"){const w=t.replace(/[^A-Z ]/g," ").split(/\s+/).filter(x=>x.length>=2&&!/^(SURNAME|GIVEN|NAMES?|TYPE|NATIONALITY|DATE|BIRTH|SEX|PASSPORT|NO|REPUBLIC|OF|KOREA|COUNTRY|CODE|ISSUING|PM)$/.test(x)).map(fixRom).filter(romOK);return k==="sur"?(w[0]||""):w.slice(0,3).join(" ")}
+ if(k==="pSex"){const m=t.match(/\b([MF])\b/)||t.match(/([MF])/);return m?m[1]:""}
+ if(k==="pNat")return/KOR/.test(t.replace(/[^A-Z]/g,""))?"KOR":"";
+ if(k==="pDob"){const u=t.replace(/O(?=\d)|(?<=\d)O/g,"0"),m=u.match(/(\d{1,2})\D{0,14}?(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\D{0,3}(\d{4})/);
+  return m&&+m[1]>=1&&+m[1]<=31?`${m[3]}-${MON[m[2]]}-${m[1].padStart(2,"0")}`:""}
+ return"";
+}
+async function camFallback(me,F,pc){
+ // 사진 오른쪽 글씨 영역 전체를 한 번에 읽고, 글씨 모양으로 칸을 구분 (테두리를 대충 맞춰도 됨)
+ me.fb=me.fb||{};me.fbPos=me.fbPos||{};const vote=(k,v,w)=>{if(!v)return;const o=me.fb[k]||(me.fb[k]={});o[v]=(o[v]||0)+(w||1)};
+ const geo={ppm:F.ppm,ang:0,at:(mx,mu)=>({x:F.left+(PG.lx+mx)*F.ppm,y:F.top+(PG.ly-mu)*F.ppm})};
+ const a=geo.at(31,11),b=geo.at(116,67),sc=Math.min(3,[10,13][me.n%2]/F.ppm),pad=12,cx=(a.x+b.x)/2,cy=(a.y+b.y)/2;
+ let c=stretch(cropRot(pc,cx,cy,b.x-a.x,a.y-b.y,0,sc),pad);if(me.n%4>=2)binarize(c,4*F.ppm*sc,0.15);
+ const w=await getKor();await w.setParameters({tessedit_pageseg_mode:"6"});
+ const r=await w.recognize(c,{},{blocks:true,text:true});const cw=c.width,ch=c.height;if(window.__fbdbg)window.__fbdbg(c,r.data.text);freeC(c);if(cam!==me)return null;
+ const P=(X,Y)=>({x:cx+(X-cw/2)/sc,y:cy+(Y-ch/2)/sc});
+ const ls=tLines(r.data).map(l=>({raw:l.text,t:l.text.toUpperCase(),p0:P(l.bbox.x0,(l.bbox.y0+l.bbox.y1)/2),pb:P(l.bbox.x0,l.bbox.y1),ws:(l.words||[]).map(x=>({t:x.text.toUpperCase().replace(/[^A-Z0-9]/g,""),p0:P(x.bbox.x0,(x.bbox.y0+x.bbox.y1)/2),pb:P(x.bbox.x0,x.bbox.y1)}))})).sort((x,y)=>x.p0.y-y.p0.y);
+ const STOP=/^(SURNAME|SURNAM|GIVEN|NAMES?|TYPE|NATIONALITY|DATE|BIRTH|SEX|PASSPORT|NO|REPUBLIC|OF|KOREA|COUNTRY|CODE|ISSUING|SPOUSE|PERSONAL|AUTHORITY|ISSUE|EXPIRY)$/;
+ let dobY=null,lay=null;
+ for(const l of ls){const v=fbParse("pNo",l.t);if(v&&camLayout(v)){vote("pNo",v);lay=camLayout(v);me.fbPos.pNo=l.ws.find(x=>x.t.length>=6&&/\d{3}/.test(x.t))||l}}
+ const dates=[];for(const l of ls){const u=l.t.replace(/O(?=\d)|(?<=\d)O/g,"0"),re=/(\d{1,2})\D{0,14}?(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\D{0,3}(\d{4})/g;let m;
+  while((m=re.exec(u)))if(+m[1]>=1&&+m[1]<=31&&+m[3]>1900&&+m[3]<2100)dates.push({l,y:+m[3],v:`${m[3]}-${MON[m[2]]}-${m[1].padStart(2,"0")}`,end:m.index+m[0].length,u})}
+ if(dates.length){const d=dates.sort((x,y)=>x.y-y.y)[0];vote("pDob",d.v);me.fbPos.pDob=d.l;dobY=d.l.p0.y;
+  const sx=d.u.slice(d.end).match(/^\W*([MF])\b/);if(sx){vote("pSex",sx[1]);me.fbPos.pSex=d.l}}
+ for(const l of ls){const q=l.t.replace(/[^A-Z]/g,"");if(q==="M"||q==="F"){vote("pSex",q,2);me.fbPos.pSex=l}if(/KOREA/.test(q)&&dobY!=null&&Math.abs(l.p0.y-dobY)<12*F.ppm){vote("pNat","KOR");me.fbPos.pNat=l}}
+ const nm=ls.filter(l=>dobY==null||l.p0.y<dobY).map(l=>({l,w:l.t.replace(/0/g,"O").replace(/1/g,"I").replace(/5/g,"S").replace(/8/g,"B").replace(/[^A-Z ]/g," ").split(/\s+/).filter(x=>x.length>=2&&!STOP.test(x)).map(fixRom)})).filter(x=>x.w.length&&x.w.length<=3&&x.w.every(romOK)&&!/KOR|MINISTRY|AFFAIRS|FOREIGN/.test(x.l.t));
+ // 이름은 "Surname" / "Given names" 안내 글씨 바로 다음 줄을 우선 사용 (예: JOO가 300으로 읽혀도 J·O로 바꿔 봄)
+ const DG={"0":"O","1":"I","3":"J","5":"S","8":"B","2":"Z","6":"G","4":"A"},nmW=t=>t.replace(/[0-9]/g,d=>DG[d]).replace(/[^A-Z ]/g," ").split(/\s+/).filter(x=>x.length>=2&&!STOP.test(x)).map(fixRom).filter(romOK);
+ const capI=re=>ls.findIndex(l=>re.test(l.t.replace(/[^A-Z]/g,"")));
+ const iS=capI(/SURNAME|SUMAME|SURNAM|URNAME/),iG=capI(/GIVEN|IVENNAM|NAMES/);
+ if(iS>=0&&ls[iS+1]){const w=nmW(ls[iS+1].t);if(w[0]){vote("sur",w[0],ALL_ROMS.has(w[0])?4:2);me.fbPos.sur=ls[iS+1]}}
+ if(iG>=0&&ls[iG+1]){const w=nmW(ls[iG+1].t);if(w.length){vote("giv",w.slice(0,3).join(" "),3);me.fbPos.giv=ls[iG+1]}}
+ if(iS<0&&iG<0&&nm.length>=2){vote("sur",nm[0].w[0],ALL_ROMS.has(nm[0].w[0])?3:1);me.fbPos.sur=nm[0].l;vote("giv",nm[1].w.join(" "),1+nm[1].w.join("").length/4);me.fbPos.giv=nm[1].l}
+ const sur=camFbTop(me,"sur"),giv=camFbTop(me,"giv"),names=sur&&giv?[sur+" "+giv]:[];
+ for(const l of ls){const k=pickKo(l.raw,names,sur);if(k){const f=fixKo(k,names);vote("pKo",f,names.some(e=>romMatch(f,e))?3:1);me.fbPos.pKo=l}}
+ if(lay)vote("lay",lay);
+ const L2=lay||camFbLay(me),kb=me.fb.pKo?Math.max(...Object.values(me.fb.pKo)):0;
+ if(L2&&kb<6){ // 한글 이름 칸 주변을 넓게 따로 한 번 더 읽기
+  const z=L2==="old"?[68,108,13,29]:[32,68,30,43],a2=geo.at(z[0],z[3]),b2=geo.at(z[1],z[2]),s2=Math.min(4,[12,15][me.n%2]/F.ppm);
+  const c2=stretch(cropRot(pc,(a2.x+b2.x)/2,(a2.y+b2.y)/2,b2.x-a2.x,b2.y-a2.y,0,s2),12),r2=await w.recognize(c2,{},{blocks:true,text:true});const w2=c2.width,h2=c2.height;freeC(c2);if(cam!==me)return null;
+  for(const l of tLines(r2.data)){const k=pickKo(l.text,names,sur);if(k){const f=fixKo(k,names);vote("pKo",f,names.some(e=>romMatch(f,e))?3:1);
+   me.fbPos.pKo={p0:{x:(a2.x+b2.x)/2+(l.bbox.x0-w2/2)/s2,y:(a2.y+b2.y)/2+((l.bbox.y0+l.bbox.y1)/2-h2/2)/s2},pb:{x:(a2.x+b2.x)/2+(l.bbox.x0-w2/2)/s2,y:(a2.y+b2.y)/2+(l.bbox.y1-h2/2)/s2}}}}
+ }
+ me.last={geo,map:F.map,n:me.n,fb:true};
+ return geo;
+}
+function camFbTop(me,k){const o=me.fb&&me.fb[k];if(!o)return"";let b="",n=0;for(const [v,c] of Object.entries(o))if(c>n){n=c;b=v}return b}
+function camFbLay(me){return camFbTop(me,"lay")||camLayout(camFbTop(me,"pNo"))}
 function camBestMrz(me){let b=null;for(const m of Object.values(me.mrz))if(!b||m.n*2+m.p.score>b.n*2+b.p.score)b=m;return b}
 function camNames(me){const B=camBestMrz(me);return me.names.length?me.names:(B&&B.p.en?[B.p.en]:[])}
 function camVals(me){
- const B=camBestMrz(me);if(!B)return null;const p=B.p,names=camNames(me);
+ const B=camBestMrz(me);
+ if(!B){ // 하단 코드 없이 각 칸만 읽은 값: 모두 노란색(검증 안 됨)
+  if(!me.fb||!Object.keys(me.fb).some(k=>k!=="lay"))return null;const T=k=>camFbTop(me,k),sur=T("sur"),giv=T("giv"),en=[sur,giv].filter(Boolean).join(" "),ko=T("pKo"),sex=T("pSex");
+  return{fb:true,p:{no:T("pNo"),dob:T("pDob"),sex,nat:T("pNat"),okDob:false,sur},en,ko,sur,giv,lay:camFbLay(me)||"new",
+   f:{pNo:[T("pNo"),false],sur:[sur,false],giv:[giv,false],pKo:[ko,false],pDob:[T("pDob"),false],pSex:[sex==="M"?"M (남)":sex==="F"?"F (여)":"",false],pNat:[T("pNat"),false]}};
+ }
+ const p=B.p,names=camNames(me);
  let ko="",kn=0;for(const [k,n] of Object.entries(me.kos))if(n>kn){kn=n;ko=k}
  const en=names.length?pickName(names,ko):"",sur=p.sur&&en.startsWith(p.sur)?p.sur:en.split(" ")[0]||"",giv=en.slice(sur.length).trim();
  const koOk=!!ko&&!!en&&romMatch(ko,en),agree=B.n>=2;
@@ -955,6 +1019,7 @@ function camDraw(){
  // 상태 안내
  let msg,allOk=false;
  if(!V)msg=me.img?"한 손가락으로 사진을 옮기고, 두 손가락으로 벌려서 여권 사진면을 노란 테두리에 맞춰 주세요":me.n<2?"여권 사진면을 노란 테두리에 꽉 맞춰 주세요":"아래 영문·숫자 2줄이 아직 안 읽힙니다. 테두리에 맞추고, 빛 반사가 없게 각도를 조금씩 바꿔 보세요";
+ else if(V.fb)msg="하단 코드가 안 읽혀서 각 칸을 따로 읽었습니다. 노란 값은 검증 안 된 값이니 여권과 비교하고 [확인] 후 입력란에서 고치세요";
  else{allOk=Object.values(V.f).every(x=>x[1]||(x===V.f.pKo&&V.p.nat!=="KOR"));
   msg=allOk?(me.img?"✓ 모두 읽었습니다. 여권 글씨와 같으면 [확인]":"✓ 모두 읽었습니다. 여권 글씨와 같으면 [이 값으로 저장]"):!V.f.pKo[1]&&V.p.nat==="KOR"?"한글 이름 읽는 중... 한글 이름에 반사가 없게 해 주세요":"한 번 더 확인 중... 그대로 잠시 들고 계세요"}
  if(!me.ready)msg="인식 엔진 준비 중... (처음엔 30초 정도 걸릴 수 있음)";else if(!allOk&&me.n)msg+=` · ${me.n}번째 읽는 중`; // 계속 읽고 있다는 표시
@@ -967,14 +1032,18 @@ function camDraw(){
  const L=me.last,live=L&&L.geo&&me.n-L.n<=1,m=G.gw/PG.w,fs=Math.max(11,Math.min(17,3*m));
  const pos=(mx,mu)=>{if(live){const q=L.geo.at(mx,mu),M=L.map;return{x:(M.sx+q.x/M.k)*G.s+G.ox,y:(M.sy+q.y/M.k)*G.s+G.oy}}
   return{x:G.gx+(PG.lx+mx)*m,y:G.gy+(PG.ly-mu)*m}};
+ const pcS=(p,dx,dy)=>{const M=L.map,k=L.geo.ppm;return{x:(M.sx+(p.x+dx*k)/M.k)*G.s+G.ox,y:(M.sy+(p.y+dy*k)/M.k)*G.s+G.oy}};
  $("camLbl").innerHTML=Object.entries(LAY[V.lay]).map(([k,[mx,mu,md]])=>{const x=V.f[k];if(!x||!x[0])return"";
-  const q=md==="L"?pos(mx-1.5,mu):md==="R"?pos(mx+3,mu):pos(mx,mu-5),tf=md==="L"?"translate(-100%,-50%)":md==="R"?"translate(0,-50%)":"translate(0,0)";
+  if(V.fb){const fp=me.fbPos&&me.fbPos[k];if(!L||!fp||(k==="pSex"&&me.fbPos.pDob&&Math.abs(me.fbPos.pDob.p0.y-fp.p0.y)<2*L.geo.ppm))return""; // 각 칸 따로 읽은 경우: 실제 읽힌 줄 옆에 표시
+   md=k==="pNo"||(k==="pKo"&&V.lay==="old")?"B":"L"}
+  const fp=V.fb&&me.fbPos[k];
+  const q=fp?(md==="L"?pcS(fp.p0,-1.5,0):pcS(fp.pb,0,1.5)):md==="L"?pos(mx-1.5,mu):md==="R"?pos(mx+3,mu):pos(mx,mu-5),tf=md==="L"?"translate(-100%,-50%)":md==="R"?"translate(0,-50%)":"translate(0,0)";
   return`<div class="cl${x[1]?" ok":""}" style="left:${q.x.toFixed(1)}px;top:${q.y.toFixed(1)}px;font-size:${fs.toFixed(1)}px;transform:${tf}">${esc(x[0])}</div>`}).join("");
 }
 window.addEventListener("resize",()=>cam&&camPlaceGuide());
 document.addEventListener("visibilitychange",()=>{if(document.hidden&&cam)camClose()});
 $("camClose").onclick=camClose;
-$("camReset").onclick=()=>{if(!cam)return;if(cam.best)freeC(cam.best.c);Object.assign(cam,{mrz:{},names:[],kos:{},best:null,last:null,fails:0,n:0});camDraw();$("camTop").textContent="처음부터 다시 읽습니다..."};
+$("camReset").onclick=()=>{if(!cam)return;if(cam.best)freeC(cam.best.c);Object.assign(cam,{mrz:{},names:[],kos:{},best:null,last:null,fails:0,n:0,fb:null,fbOff:null});camDraw();$("camTop").textContent="처음부터 다시 읽습니다..."};
 $("camSave").onclick=async()=>{
  const me=cam;if(!me)return;const V=camVals(me),b=me.best;if(!V||!b)return;
  me.on=false;me.best=null;camClose();
@@ -985,7 +1054,7 @@ $("camSave").onclick=async()=>{
  autoSet("pNo",V.p.no);autoSet("pSex",V.p.sex);autoSet("pDob",V.p.dob);autoSet("pNat",V.p.nat);autoSet("pEn",V.en);autoSet("pKo",V.ko);
  lockAll();$("pCheck").textContent=V.p.okDob?"":"생년월일 검증 실패 가능성 있음, 확인하세요.";
  ["pCrop","pForm","pBar"].forEach(x=>$(x).classList.remove("hidden"));
- $("pOcr").innerHTML=V.ko||V.p.nat!=="KOR"?'<span class="ok">촬영 화면에서 확인한 값을 넣었습니다. 얼굴 사진 위치만 확인하세요.</span>':'<span class="err">한글 이름을 못 읽었습니다. 빨간 칸에 직접 입력하세요.</span>';
+ $("pOcr").innerHTML=V.fb?'<span class="err">하단 코드를 못 읽어 각 칸을 따로 읽은 값입니다. 모든 칸을 여권과 꼭 비교하세요.</span>':V.ko||V.p.nat!=="KOR"?'<span class="ok">촬영 화면에서 확인한 값을 넣었습니다. 얼굴 사진 위치만 확인하세요.</span>':'<span class="err">한글 이름을 못 읽었습니다. 빨간 칸에 직접 입력하세요.</span>';
  await autoCrop();if(!faceFound)geoCrop();
 };
 

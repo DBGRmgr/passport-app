@@ -152,10 +152,10 @@ button:disabled{opacity:.5}
 <section id="vPerson" class="hidden">
  <div class="card">
   <div class="prog" id="pProg"></div>
-  <input type="file" id="fFile" accept="image/*" capture="environment" class="hidden">
+  <input type="file" id="fFile" accept="image/*" class="hidden">
   <button id="bShot">여권 촬영 (테두리에 맞추기)</button>
   <div class="note">여권 사진면을 화면의 노란 테두리에 맞추면, 읽힌 글씨가 여권 위에 바로 표시됩니다. 맞으면 저장을 누르세요.</div>
-  <button id="bShotOld" class="sec">사진으로 찍기 / 앨범에서 선택 (예전 방식)</button>
+  <button id="bShotOld" class="sec">사진 / 갤러리에서 선택</button>
   <div id="pOcr" class="note"></div>
  </div>
  <div id="pForm" class="card hidden">
@@ -834,7 +834,7 @@ async function camOpen(){
   const me=cam,st=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:"environment"},width:{ideal:3840},height:{ideal:2160}}});
   if(cam!==me){st.getTracks().forEach(t=>t.stop());return}
   me.stream=st;
- }catch(e){camClose();alert("카메라를 열 수 없습니다. 아이폰 설정에서 카메라 허용을 확인하거나, '사진으로 찍기 (예전 방식)'을 사용하세요.");return}
+ }catch(e){camClose();alert("카메라를 열 수 없습니다. 아이폰 설정에서 카메라 허용을 확인하거나, '사진 / 갤러리에서 선택'을 사용하세요.");return}
  const v=$("camV");v.srcObject=cam.stream;try{await v.play()}catch(e){}
  for(let i=0;i<50&&!v.videoWidth;i++)await new Promise(r=>setTimeout(r,100));
  camPlaceGuide();v.onresize=camPlaceGuide;

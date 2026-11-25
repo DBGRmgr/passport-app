@@ -117,10 +117,9 @@ button:disabled{opacity:.5}
 <!-- 홈 -->
 <section id="vHome" class="hidden">
  <div id="draftCard" class="card hidden">
-  <b>진행 중인 접수가 있습니다</b>
-  <div id="draftInfo" class="note"></div>
-  <button id="bResume">이어서 하기</button>
-  <button id="bDropDraft" class="sec">버리고 새로 시작</button>
+  <b>보류 중인 접수</b>
+  <div class="note">나머지 여권(예: 리더 부부)이 오면 "이어서 촬영"을 누르세요.</div>
+  <div id="draftList"></div>
  </div>
  <div class="card">
   <b>새 접수</b>
@@ -166,6 +165,7 @@ button:disabled{opacity:.5}
  </div>
  <div id="pCropOld" class="card hidden"><div class="row"><img id="oldFace" style="width:90px;height:120px;object-fit:cover;border-radius:6px" alt=""><div class="note">저장된 얼굴 사진. 바꾸려면 위에서 다시 촬영하세요.</div></div></div>
  <button id="bCancel" class="sec">뒤로 가기</button>
+ <button class="sec bHold">⏸ 보류 (나머지 여권은 나중에)</button>
  <div id="pBar" class="bar hidden">
   <div id="ePerson" class="err"></div>
   <button id="bSave">확인 완료, 다음</button>
@@ -181,6 +181,7 @@ button:disabled{opacity:.5}
   <input type="tel" id="cPhone" placeholder="010-1234-5678">
   <div class="note">없으면 비워두고 "연락처 없음"을 누르세요.</div>
   <button id="bBackEdit" class="sec">← 여권 정보 다시 수정</button>
+  <button class="sec bHold">⏸ 보류 (나머지 여권은 나중에)</button>
  </div>
  <div class="bar">
   <button id="bContactSave">연락처 저장하고 다음</button>
@@ -263,9 +264,11 @@ const req=r=>new Promise((res,rej)=>{r.onsuccess=()=>res(r.result);r.onerror=()=
 const qAll=()=>req(st("q","readonly").getAll());
 const qPut=o=>req(st("q","readwrite").put(o));
 const qDel=id=>req(st("q","readwrite").delete(id));
-const draftGet=()=>req(st("draft","readonly").get("cur"));
-const draftPut=g=>req(st("draft","readwrite").put(g,"cur"));
-const draftDel=()=>req(st("draft","readwrite").delete("cur"));
+// 진행 중/보류 중인 접수: 그룹마다 따로 저장 (여러 그룹을 동시에 보류 가능)
+const draftAll=()=>req(st("draft","readonly").getAll());
+const draftPut=g=>req(st("draft","readwrite").put(g,g.gid));
+const draftDel=(gid)=>req(st("draft","readwrite").delete(gid||(group&&group.gid)));
+async function draftMigrate(){const old=await req(st("draft","readonly").get("cur"));if(old){old.gid=old.gid||uid();await draftPut(old);await req(st("draft","readwrite").delete("cur"))}}
 
 /* ---------- 잠금 ---------- */
 async function sha(s){const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode("pp:"+s));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("")}
@@ -337,19 +340,30 @@ $("hCount").value="2";
 let group=null;
 async function home(){
  show("vHome");
- const d=await draftGet();
- if(d){$("draftCard").classList.remove("hidden");$("draftInfo").textContent=`${d.total}명 중 ${d.persons.length}명 입력됨 (${new Date(d.startedAt).toLocaleString("ko-KR")})`}
- else $("draftCard").classList.add("hidden");
+ const ds=(await draftAll()).sort((a,b)=>a.startedAt<b.startedAt?-1:1);
+ $("draftCard").classList.toggle("hidden",!ds.length);
+ $("draftList").innerHTML=ds.map(d=>{const names=d.persons.map(p=>p.nameKo||p.nameEn).filter(Boolean);
+  return `<div class="dft" style="border:1px solid #ddd;border-radius:8px;padding:10px;margin:8px 0"><b>${esc(d.memo||(names[0]?names[0]+" 님 일행":"이름 없는 접수"))}</b>
+  <div class="note">${d.total}명 중 <b>${d.persons.length}명</b> 촬영됨 · ${esc(new Date(d.startedAt).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}))}${names.length?"<br>"+esc(names.join(", ")):""}</div>
+  <button class="dRes" data-g="${esc(d.gid)}">이어서 촬영</button><button class="sec dDel" data-g="${esc(d.gid)}">삭제</button></div>`}).join("");
+ document.querySelectorAll(".dRes").forEach(b=>b.onclick=async()=>{group=(await draftAll()).find(x=>x.gid===b.dataset.g);if(!group)return home();resumeGroup()});
+ document.querySelectorAll(".dDel").forEach(b=>b.onclick=async()=>{if(confirm("이 보류 접수를 삭제할까요? 촬영한 여권 정보가 모두 지워집니다.")){await draftDel(b.dataset.g);home()}});
  await renderQ();sync();
 }
 $("bStart").onclick=async()=>{
- const d=await draftGet();
- if(d&&!confirm("진행 중인 접수를 버리고 새로 시작할까요?"))return;
  group={gid:uid(),total:parseInt($("hCount").value,10),persons:[],startedAt:new Date().toISOString()};
  await draftPut(group);startPerson();
 };
-$("bResume").onclick=async()=>{group=await draftGet();if(!group)return home();resumeGroup()};
-$("bDropDraft").onclick=async()=>{if(confirm("진행 중인 접수를 삭제할까요?")){await draftDel();home()}};
+async function holdGroup(){ // 보류: 지금까지 촬영한 여권은 휴대폰에 저장해 두고, 나머지는 나중에 이어서
+ if(curView==="vPerson"&&hasPhoto&&!editOrig&&!confirm("지금 화면의 여권은 아직 '확인 완료'를 누르지 않아 저장되지 않습니다. 보류할까요?"))return;
+ ocrToken++;setBusy(false);
+ if(editOrig){group.persons.push(editOrig);editOrig=null;editPhone=undefined}
+ const names=group.persons.map(p=>p.nameKo||p.nameEn).filter(Boolean);
+ const m=prompt("나중에 찾기 쉽게 메모를 남기세요 (예: 김OO 사장님 팀, 리더 부부 여권 내일)",group.memo||(names[0]?names[0]+" 님 일행":""));
+ if(m===null)return;group.memo=m.trim();group.heldAt=new Date().toISOString();
+ await draftPut(group);const n=group.persons.length,t=group.total;group=null;
+ lock(`보류 저장됨: ${t}명 중 ${n}명. 나머지 여권이 오면 홈 화면의 "보류 중인 접수"에서 이어서 촬영하세요.`);
+}
 function resumeGroup(){
  const last=group.persons[group.persons.length-1];
  if(last&&last.phone===undefined)return showContact();
@@ -384,7 +398,7 @@ document.querySelectorAll(".ed").forEach(b=>b.onclick=()=>{const id=b.dataset.f,
 function autoSet(id,v){if(!v||$(id).dataset.touched==="1")return;if(id==="pNat")ensureNat(v);$(id).value=v}
 function setBusy(b){ocrBusy=b;$("bSave").disabled=b;$("bSave").textContent=b?"인식 중... 잠시만 기다려 주세요":"확인 완료, 다음"}
 function startPerson(){
- ocrToken++;setBusy(false);editId=null;keepPhoto="";curUpd=null;curRej=[];curOld=null;clearHints();
+ ocrToken++;setBusy(false);editId=null;keepPhoto="";keepPass="";keepThumb="";curUpd=null;curRej=[];curOld=null;clearHints();
  show("vPerson");
  $("pProg").textContent=`${group.persons.length+1}/${group.total}번째 여권`;
  ["pCrop","pForm","pBar","pCropOld"].forEach(x=>$(x).classList.add("hidden"));
@@ -395,11 +409,11 @@ function startPerson(){
 $("bShot").onclick=()=>$("fFile").click();
 $("fFile").onchange=async e=>{
  const f=e.target.files[0];if(!f)return;
- shotAt=new Date();keepPhoto="";$("pCropOld").classList.add("hidden");curUpd=null;curRej=[];curOld=null;clearHints();
+ shotAt=new Date();keepPhoto="";keepPass="";keepThumb="";$("pCropOld").classList.add("hidden");curUpd=null;curRej=[];curOld=null;clearHints();
  FIELDS.forEach(id=>{delete $(id).dataset.touched});
  $("pOcr").textContent="사진 처리 중...";
  const bmp=await createImageBitmap(f,{imageOrientation:"from-image"}).catch(()=>createImageBitmap(f));
- const sc=Math.min(1,2400/Math.max(bmp.width,bmp.height));
+ const sc=Math.min(1,2000/Math.max(bmp.width,bmp.height));bmp.close&&setTimeout(()=>bmp.close(),0);
  srcCanvas.width=Math.round(bmp.width*sc);srcCanvas.height=Math.round(bmp.height*sc);
  srcCanvas.getContext("2d").drawImage(bmp,0,0,srcCanvas.width,srcCanvas.height);
  hasPhoto=true;$("bShot").textContent="다시 촬영";
@@ -427,7 +441,7 @@ async function autoCrop(){
  requestAnimationFrame(layoutBox);
 }
 function geoCrop(){ // 하단 코드 위치로 여권 사진 위치 계산 (사진: 코드 왼쪽 끝 기준 가로 -2~35mm, 위로 14~63mm)
- if(!mrzGeo)return;const g=mrzGeo,c=g.at(16.5,38.5),W=srcCanvas.width,w=37*g.ppm;
+ if(!mrzGeo)return;const g=mrzGeo,c=g.at(15.5,38.5),W=srcCanvas.width,w=36*g.ppm;
  bw=Math.max(0.1,Math.min(0.6,w/W));bx=(c.x-w/2)/W;by=(c.y-w*2/3)/W;$("cropSize").value=Math.round(bw*100);
  requestAnimationFrame(layoutBox);
 }
@@ -441,6 +455,12 @@ function cropData(){
  const sw=bw*W*k;const c=document.createElement("canvas");c.width=240;c.height=320;
  c.getContext("2d").drawImage(srcCanvas,bx*W*k,by*W*k,sw,sw*4/3,0,0,240,320);
  return c.toDataURL("image/jpeg",0.7);
+}
+let keepPass="",keepThumb="";
+function fullImg(max,q){ // 여권 촬영 원본(보험 청구·사본용): 긴 쪽 max px JPEG
+ const sc=Math.min(1,max/Math.max(srcCanvas.width,srcCanvas.height)),c=document.createElement("canvas");
+ c.width=Math.round(srcCanvas.width*sc);c.height=Math.round(srcCanvas.height*sc);c.getContext("2d").drawImage(srcCanvas,0,0,c.width,c.height);
+ const d=c.toDataURL("image/jpeg",q);c.width=c.height=0;return d;
 }
 function updatePrev(){if(hasPhoto)$("facePrev").src=cropData()}
 
@@ -488,13 +508,13 @@ function parseMRZ(txt){
  const rest=al.rest,expS=toNum(rest.slice(8,14)),okExp=/^\d{6}$/.test(expS)&&cd(expS)===+toNum(rest[14]||"x");
  let okComp=false;if(rest.length>=31){const cs=no+chk+dobS+rest[6]+expS+rest[14]+rest.slice(15,29)+rest[29];okComp=cd(cs)===+toNum(rest[30])}
  const l1a=l1.replace(/[0-9]/g,c=>({"0":"O","1":"I","2":"Z","5":"S","8":"B","6":"G","4":"A"}[c]||"<")),ki=l1a.slice(0,8).indexOf("KOR"),nm=mrzName(l1a.slice(ki>=1?ki+3:5)),sur=nm.sur; // 앞에 글자가 끼어든 경우 대비
- const score=(okNo?2:0)+(okDob?1:0)+(okExp?1:0)+(okComp?1:0)+(l1[0]==="P"?1:0);
+ const score=(okNo?2:0)+(okDob?1:0)+(okExp?1:0)+(okComp?1:0)+(l1[0]==="P"?1:0)-(nat==="KOR"&&!/^[A-Z]\d{3}[A-Z]\d{4}$|^[A-Z]\d{8}$/.test(no.replace(/</g,""))?2:0); // 한국 여권번호 형식이 아니면 감점
  return{no:no.replace(/</g,""),sex,dob,okNo,okDob,okExp,okComp,sur,nat,en:nm.en,okName:nm.ok,score};
 }
 function mrzName(f){ // MRZ 1번째 줄 이름: 성<<이름<이름<<<<
  f=f.replace(/[^A-Z<]/g,"");
  // 채움 문자 '<'가 C/L/K/E 로 잘못 읽힌 것 되돌리기: 로마자 이름에서 C는 항상 CH, '<' 사이에 낀 L/K/E/C 는 '<'
- f=f.replace(/C(?!H)/g,"<");for(let i=0;i<3;i++)f=f.replace(/<[LKEC]+(?=<|$)/g,m=>"<".repeat(m.length)).replace(/[LKE]{5,}(?=<|$)/g,m=>"<".repeat(m.length));
+ f=f.replace(/C(?!H)/g,"<");for(let i=0;i<3;i++)f=f.replace(/<[LKEC]+(?=<|$)/g,m=>(m.length<=4&&romOK(m.slice(1)))?m:"<".repeat(m.length)).replace(/[LKE]{5,}(?=<|$)/g,m=>"<".repeat(m.length));
  let sur=(f.match(/^[A-Z]+/)||[""])[0],giv=f.slice(sur.length).replace(/^<+/,"");
  if(!ALL_ROMS.has(sur)){for(const r of ALL_ROMS){const q=sur.slice(r.length);if(sur.startsWith(r)&&/^[KC]{2}/.test(q)){giv=q.slice(2)+(giv?"<"+giv:"");sur=r;break}}} // '<<'가 KK로 읽힌 경우
  giv=giv.split(/<{3,}/)[0].split("<").filter(w=>w&&romOK(w));
@@ -545,7 +565,8 @@ function parseNames(txt,mrzSur){
 }
 let mrzWorker=null,korWorker=null,mrzGeo=null;
 const MRZ_LANG="https://cdn.jsdelivr.net/gh/DoubangoTelecom/tesseractMRZ@1e7adfecda5f3c9ae1fb12cf6b4b8c3958c63e46/tessdata_fast"; // 여권 하단 코드 전용 글꼴 학습 데이터(1.4MB, BSD)
-async function getMrz(){if(!mrzWorker){mrzWorker=await Tesseract.createWorker("mrz",1,{langPath:MRZ_LANG,gzip:false}).catch(()=>Tesseract.createWorker("eng"));await mrzWorker.setParameters({tessedit_char_whitelist:"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<",tessedit_pageseg_mode:"6"})}return mrzWorker}
+async function getMrz(){if(!mrzWorker){const to=new Promise((_,rej)=>setTimeout(()=>rej(new Error("timeout")),25000)); // 전용 데이터 다운로드가 막히거나 느리면 25초 후 일반 영어 데이터로
+  mrzWorker=await Promise.race([Tesseract.createWorker("mrz",1,{langPath:MRZ_LANG,gzip:false,errorHandler:()=>{}}),to]).catch(()=>Tesseract.createWorker("eng"));await mrzWorker.setParameters({tessedit_char_whitelist:"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<",tessedit_pageseg_mode:"6"})}return mrzWorker}
 async function getKor(){if(!korWorker){korWorker=await Tesseract.createWorker(["kor","eng"]);await korWorker.setParameters({tessedit_pageseg_mode:"11"})}return korWorker}
 function region(y0,y1,maxW,filter,src){
  src=src||srcCanvas;const W=src.width,H=src.height,sy=Math.round(H*y0),sh=Math.round(H*(y1-y0));
@@ -553,6 +574,7 @@ function region(y0,y1,maxW,filter,src){
  const g=c.getContext("2d");g.filter=filter;g.drawImage(src,0,sy,W,sh,0,0,c.width,c.height);return{c,sc,sy};
 }
 /* --- 이미지 도구 --- */
+const freeC=(...cs)=>cs.forEach(c=>{if(c&&c!==srcCanvas){c.width=0;c.height=0}}); // 아이폰은 캔버스 메모리 한도가 작아서 다 쓴 캔버스는 즉시 비움
 function rotCanvas(src,deg){ // 90/180/270도 회전
  const c=document.createElement("canvas"),s=deg%180!==0;c.width=s?src.height:src.width;c.height=s?src.width:src.height;
  const g=c.getContext("2d");g.translate(c.width/2,c.height/2);g.rotate(deg*Math.PI/180);g.drawImage(src,-src.width/2,-src.height/2);return c;
@@ -585,7 +607,7 @@ function skewOf(src){ // 사진 기울기 추정 (글자 줄이 가장 또렷하
  c.getContext("2d").drawImage(src,0,0,c.width,c.height);binarize(c,25,0.15);
  const d=c.getContext("2d").getImageData(0,0,c.width,c.height).data,P=[];
  for(let y=0;y<c.height;y+=1)for(let x=0;x<c.width;x+=2)if(d[(y*c.width+x)*4]===0)P.push(x,y);
- if(P.length<200)return 0;let best=0,bs=-1;
+ freeC(c);if(P.length<200)return 0;let best=0,bs=-1;
  for(let a=-15;a<=15;a+=0.5){const r=a*Math.PI/180,cs=Math.cos(r),sn=Math.sin(r),H=new Map();
   for(let i=0;i<P.length;i+=2){const k=Math.round(P[i+1]*cs-P[i]*sn);H.set(k,(H.get(k)||0)+1)}
   let sq=0;for(const v of H.values())sq+=v*v;if(sq>bs){bs=sq;best=a}}
@@ -613,7 +635,7 @@ async function readMRZ(src,say){
  const w=await getMrz();let best=null;
  for(const frac of [0.55,0.35]){ // 1단계: 하단에서 MRZ 줄 위치 찾기
   const R=region(1-frac,1,2400,"grayscale(1) contrast(1.6)",src);
-  const r=await w.recognize(R.c,{},{blocks:true,text:true});
+  const r=await w.recognize(R.c,{},{blocks:true,text:true});freeC(R.c);
   const pk=mrzPick(tLines(r.data));
   if(pk&&(!best||pk.p.score>best.p.score)){const ls=tLines(r.data);best={p:pk.p,g1:lineGeo(ls[pk.i],R.sc,R.sy),g2:lineGeo(ls[pk.i+1],R.sc,R.sy)}}
   if(best&&best.p.score>=6)break;
@@ -628,7 +650,7 @@ async function readMRZ(src,say){
  const vars=[c=>c,c=>binarize(c,d*sc*0.9,0.12),c=>binarize(c,d*sc*0.9,0.06)];
  for(let k=0;k<vars.length;k++){
   const c=vars[k](cropRot(src,cx,cy,len*1.08,d*2.3,ang,sc,"grayscale(1) contrast(1.4)"));
-  const r=await w.recognize(c);const ls=r.data.text.split(/\n/).map(mrzClean).filter(s=>s.length>=30);
+  const r=await w.recognize(c);freeC(c);const ls=r.data.text.split(/\n/).map(mrzClean).filter(s=>s.length>=30);
   for(let i=0;i+1<ls.length;i++){const p=parseMRZ(ls[i]+"\n"+ls[i+1]);if(!p)continue;addName(p);if(p.score>best.p.score)best.p=p}
   if(k>=1&&best.p.score>=6&&names.length>=3)break;
  }
@@ -645,7 +667,9 @@ const RO_F=[[""],["K","G"],["K"],["K"],["N"],["N"],["N"],["T","D"],["L"],["K"],[
 function syRoms(ch){
  const k=ch.charCodeAt(0)-0xAC00;if(k<0||k>11171)return[];
  const i=Math.floor(k/588),v=Math.floor(k%588/28),f=k%28,o=[];
- for(const a of RO_I[i])for(const b of RO_V[v])for(const c of RO_F[f])o.push(a+b+c);return o;
+ for(const a of RO_I[i])for(const b of RO_V[v])for(const c of RO_F[f])o.push(a+b+c);
+ if(SURN[ch])SURN[ch].forEach(r=>o.includes(r)||o.push(r)); // 이름 글자도 성처럼 쓰는 경우 (이→LEE, 오→OH 등)
+ return o;
 }
 let ROMSET=null;
 function romOK(w){ // 한국어 음절 로마자들의 조합으로 쓸 수 있는 단어인지 (잡음 글자 거르기)
@@ -659,6 +683,13 @@ function romMatch(ko,en){ // 한글 이름이 영문 이름(공백 무시)과 �
  tries.push([[...(SURN[ch[0]]||[]),...syRoms(ch[0])],...ch.slice(1).map(syRoms)]);
  return tries.some(opts=>{const memo=new Map();const go=(i,p)=>{if(i===opts.length)return p===en.length;const key=i*100+p;if(memo.has(key))return memo.get(key);
   let ok=false;for(const r of opts[i])if(en.startsWith(r,p)&&go(i+1,p+r.length)){ok=true;break}memo.set(key,ok);return ok};return go(0,0)});
+}
+const KO_SIM=[[11,6,7,18],[0,15,1],[3,16,5,4],[12,14,9,13]]; // 모양이 비슷해 잘못 읽기 쉬운 첫소리: ㅇㅁㅂㅎ / ㄱㅋㄲ / ㄷㅌㄹㄸ / ㅈㅊㅅㅉ
+function fixKo(ko,names){ // 한글 이름이 영문과 안 맞으면 한 글자의 첫소리만 비슷한 것으로 바꿔 맞는 것이 딱 하나면 고쳐줌 (예: 황목이→황옥이)
+ if(!ko||names.some(e=>romMatch(ko,e)))return ko;const ch=[...ko],hits=new Set();
+ ch.forEach((c,i)=>{const k=c.charCodeAt(0)-0xAC00;if(k<0||k>11171)return;const ini=Math.floor(k/588),rest=k%588;
+  KO_SIM.filter(g=>g.includes(ini)).flat().forEach(n=>{if(n===ini)return;const t=[...ch];t[i]=String.fromCharCode(0xAC00+n*588+rest);const w=t.join("");if(names.some(e=>romMatch(w,e)))hits.add(w)})});
+ return hits.size===1?[...hits][0]:ko;
 }
 function pickName(names,ko){ // 여러 번 읽은 영문 이름 중: 한글 이름과 소리가 맞는 것 > 많이 나온 것 > 성이 흔한 성인 것
  const cnt={};names.forEach(n=>cnt[n]=(cnt[n]||0)+1);
@@ -690,21 +721,22 @@ async function runOCR2(tok){
  let mrz=null,M=null,txt="",mrzNames=[];mrzGeo=null;
  try{
   msg[0]="① 여권 하단 코드 읽는 중...";say();
-  const orig=rotFree(srcCanvas,0),prep=c=>{const sk=skewOf(c);return Math.abs(sk)>=1?rotFree(c,-sk):c}; // 기울게 찍힌 사진은 먼저 바르게 돌리기
+  const orig=rotFree(srcCanvas,0),prep=c=>{const sk=skewOf(c);if(Math.abs(sk)<1)return c;const r=rotFree(c,-sk);if(c!==orig)freeC(c);return r}; // 기울게 찍힌 사진은 먼저 바르게 돌리기
   let c0=prep(orig);M=await readMRZ(c0);if(M)M.rot=c0;
   if(!M||M.p.score<4){ // 여권을 옆으로/거꾸로 찍은 경우
    for(const deg of [90,270,180]){if(tok!==ocrToken)return;
     msg[0]="① 사진 방향을 바꿔서 다시 읽는 중...";say();
     const rc=prep(rotCanvas(orig,deg)),m2=await readMRZ(rc);
-    if(m2&&(!M||m2.p.score>M.p.score)){M=m2;M.rot=rc}
+    if(m2&&(!M||m2.p.score>M.p.score)){if(M&&M.rot!==orig)freeC(M.rot);M=m2;M.rot=rc}else if(rc!==orig)freeC(rc);
     if(M&&M.p.score>=4)break;
    }
   }
   if(tok!==ocrToken)return;
   if(!M)M={p:{score:0},rot:c0};
-  if(M.rot!==orig){srcCanvas.width=M.rot.width;srcCanvas.height=M.rot.height;srcCanvas.getContext("2d").drawImage(M.rot,0,0);faceFound=false;requestAnimationFrame(layoutBox)} // 바르게 돌린 사진으로 교체
+  if(M.rot!==orig){srcCanvas.width=M.rot.width;srcCanvas.height=M.rot.height;srcCanvas.getContext("2d").drawImage(M.rot,0,0);faceFound=false;requestAnimationFrame(layoutBox)}
+  freeC(M.rot,orig); // 바르게 돌린 사진으로 교체
   if(tok!==ocrToken)return;
-  if(M.p.score>=3){mrz=M.p;mrzGeo=M.geo;
+  if(M.p.okNo&&M.p.score>=4){mrz=M.p;mrzGeo=M.geo;
    autoSet("pNo",mrz.no);autoSet("pSex",mrz.sex);autoSet("pDob",mrz.dob);autoSet("pNat",mrz.nat);
    mrzNames=M.names||[];if(mrz.okName&&!mrzNames.length)mrzNames=[mrz.en];if(mrzNames.length)autoSet("pEn",pickName(mrzNames,""));
    ["pNat","pNo","pSex","pDob","pEn"].forEach(id=>setLock(id,true));
@@ -725,20 +757,20 @@ async function runOCR2(tok){
    // 같은 자리를 크기·읽기 방식을 바꿔 여러 번 읽고, 영문 이름과 소리가 맞는 결과가 나오면 바로 채택
    outer:for(const z of [[33,60,32,40],[71,98,17,26]])for(const ppm of [12,17,8,24])for(const psm of ["7","13"]){
     await w.setParameters({tessedit_pageseg_mode:psm});
-    const c=zone(...z,ppm),t=(await w.recognize(c)).data.text;if(tok!==ocrToken)return;tryTxt(t);
+    const c=zone(...z,ppm),t=(await w.recognize(c)).data.text;freeC(c);if(tok!==ocrToken)return;tryTxt(t);
     if(best===2)break outer;
    }
    if(best<2){ // 못 찾으면 사진면 전체(사진 오른쪽)에서 찾기
     await w.setParameters({tessedit_pageseg_mode:"11"});
     const a=g.at(30,12),b=g.at(120,74),sc=Math.min(3,12/g.ppm);
     const c=cropRot(srcCanvas,(a.x+b.x)/2,(a.y+b.y)/2,90*g.ppm,62*g.ppm,g.ang,sc,"grayscale(1) contrast(1.3)");
-    const t=(await w.recognize(c)).data.text;if(tok!==ocrToken)return;tryTxt(t);
+    const t=(await w.recognize(c)).data.text;freeC(c);if(tok!==ocrToken)return;tryTxt(t);
    }
-   autoSet("pKo",ko);if(ko&&mrzNames.length)autoSet("pEn",pickName(mrzNames,ko));
+   ko=fixKo(ko,en);autoSet("pKo",ko);if(ko&&mrzNames.length)autoSet("pEn",pickName(mrzNames,ko));
   }else{
    await w.setParameters({tessedit_pageseg_mode:"11"});
    const R=region(0,0.8,1600,"grayscale(1) contrast(1.4)");
-   txt=(await w.recognize(R.c)).data.text;if(tok!==ocrToken)return;
+   txt=(await w.recognize(R.c)).data.text;freeC(R.c);if(tok!==ocrToken)return;
   }
   if(tok!==ocrToken)return;
   if(!$("pKo").value||!$("pEn").value){const n=parseNames(txt,mrz&&mrz.sur);if(!$("pKo").value&&!mrzGeo)autoSet("pKo",n.ko);if(!$("pEn").value)autoSet("pEn",n.en)}
@@ -819,7 +851,7 @@ const scanVals=()=>{const o={};FIELDS.forEach(id=>o[id]=$(id).value.trim());retu
 /* 여권 정보 저장 -> 연락처 화면 */
 $("bSave").onclick=async()=>{
  if(ocrBusy||dupBusy)return;
- const p={id:editId||uid(),photo:hasPhoto?cropData():keepPhoto,nameKo:$("pKo").value.trim(),nameEn:$("pEn").value.trim().toUpperCase().replace(/\s+/g," "),
+ const p={id:editId||uid(),photo:hasPhoto?cropData():keepPhoto,passImg:hasPhoto?fullImg(1800,0.82):keepPass,passThumb:hasPhoto?fullImg(700,0.7):keepThumb,nameKo:$("pKo").value.trim(),nameEn:$("pEn").value.trim().toUpperCase().replace(/\s+/g," "),
   passNo:$("pNo").value.trim().toUpperCase().replace(/\s/g,""),nat:$("pNat").value,sex:$("pSex").value,dob:$("pDob").value,shotAt:(shotAt||new Date()).toISOString(),phone:editPhone};
  if(!p.photo&&!hasPhoto)return $("ePerson").textContent="여권을 먼저 촬영하세요.";
  if(!p.nameKo&&!p.nameEn)return $("ePerson").textContent="이름(한글 또는 영문)을 입력하세요.";
@@ -841,7 +873,7 @@ $("bSave").onclick=async()=>{
 };
 let editPhone;
 $("bBackEdit").onclick=async()=>{
- const p=group.persons.pop();editOrig=p;await draftPut(group);
+ const p=group.persons.pop();editOrig=p;keepPass=p.passImg||"";keepThumb=p.passThumb||"";await draftPut(group);
  show("vPerson");editId=p.id;editPhone=p.phone;shotAt=new Date(p.shotAt);curUpd=p.updateId||null;curRej=p.rejected||[];clearHints();
  $("pProg").textContent=`${group.persons.length+1}/${group.total}번째 여권 (수정)`;
  ensureNat(p.nat);$("pNat").value=p.nat||"";$("pKo").value=p.nameKo;$("pEn").value=p.nameEn;$("pNo").value=p.passNo;$("pSex").value=p.sex;$("pDob").value=p.dob;
@@ -869,7 +901,7 @@ async function contactDone(v){
   if(r.offline)p.dupUnchecked=true;
   if(r.keep){ // 연락처로 기존 손님 확인 -> 여권 화면으로 돌아가 기존 정보 불러오기
    const sc={pKo:p.nameKo,pEn:p.nameEn,pNat:p.nat,pNo:p.passNo,pSex:p.sex,pDob:p.dob};
-   group.persons.pop();editOrig=null;await draftPut(group);
+   group.persons.pop();editOrig=null;keepPass=p.passImg||"";keepThumb=p.passThumb||"";await draftPut(group);
    show("vPerson");editId=p.id;editPhone=v;shotAt=new Date(p.shotAt);curRej=p.rejected||[];
    $("pProg").textContent=`${group.persons.length+1}/${group.total}번째 여권`;
    if(!(hasPhoto&&srcCanvas.width)){hasPhoto=false;keepPhoto=p.photo;if(p.photo){$("oldFace").src=p.photo;$("pCropOld").classList.remove("hidden")}}
@@ -960,7 +992,7 @@ setInterval(sync,30000);
 /* ---------- 시작 ---------- */
 (async()=>{
  $("pNat").innerHTML=NAT_OPTS;attachCC("cPhone");attachCC("fRepPhone");
- await openDB();
+ await openDB();await draftMigrate();document.querySelectorAll(".bHold").forEach(b=>b.onclick=holdGroup);
  if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
  ["url","pinh","pinlen"].forEach(k=>localStorage.removeItem(k)); // 이전 버전 설정 정리
  if(!cfg.key)show("vSetup");else{lock();refreshStaff()}

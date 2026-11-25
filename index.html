@@ -84,6 +84,18 @@ button:disabled{opacity:.5}
 .ppw{margin-top:8px}
 .ppw .pp{margin-top:0}
 .ppe{width:auto!important;margin:6px 0 0!important;padding:8px 14px!important;font-size:14px!important;background:#fff!important;color:#1b5e20!important;border:1px solid #1b5e20!important}
+#cam{position:fixed;inset:0;background:#000;z-index:70;overflow:hidden}
+#camV{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+#camGuide{position:absolute;border:3px solid #ffeb3b;border-radius:10px;box-shadow:0 0 0 9999px #0008;pointer-events:none}
+#camGuide.ok{border-color:#4caf50}
+#camLbl{position:absolute;inset:0;pointer-events:none}
+.cl{position:absolute;transform:translateY(-100%);background:#000b;color:#ffeb3b;font-weight:bold;padding:0 4px;border-radius:4px;white-space:nowrap;line-height:1.25}
+.cl.ok{color:#69f0ae}
+#camTop{position:absolute;left:0;right:0;top:0;padding:calc(10px + env(safe-area-inset-top)) 12px 8px;color:#fff;font-size:15px;text-align:center;background:#000a}
+#camBot{position:absolute;left:0;right:0;bottom:0;padding:8px 12px calc(10px + env(safe-area-inset-bottom));background:#000d;color:#fff}
+#camSum{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:15px}
+#camSum .k{color:#aaa}#camSum .v{font-weight:bold;color:#ffeb3b}#camSum .v.ok{color:#69f0ae}
+#camBot .row button{margin-top:8px}
 .edbox{border:1px solid #ccc;border-radius:10px;padding:10px;margin-top:6px;background:#fafafa}
 </style>
 </head>
@@ -141,8 +153,9 @@ button:disabled{opacity:.5}
  <div class="card">
   <div class="prog" id="pProg"></div>
   <input type="file" id="fFile" accept="image/*" capture="environment" class="hidden">
-  <button id="bShot">여권 촬영 / 사진 선택</button>
-  <div class="note">여권 사진면 전체가 나오게, 빛 반사 없이 찍어 주세요.</div>
+  <button id="bShot">여권 촬영 (테두리에 맞추기)</button>
+  <div class="note">여권 사진면을 화면의 노란 테두리에 맞추면, 읽힌 글씨가 여권 위에 바로 표시됩니다. 맞으면 저장을 누르세요.</div>
+  <button id="bShotOld" class="sec">사진으로 찍기 / 앨범에서 선택 (예전 방식)</button>
   <div id="pOcr" class="note"></div>
  </div>
  <div id="pForm" class="card hidden">
@@ -219,6 +232,15 @@ button:disabled{opacity:.5}
 </section>
 
 </main>
+<div id="cam" class="hidden">
+ <video id="camV" playsinline muted autoplay></video>
+ <div id="camGuide"></div><div id="camLbl"></div>
+ <div id="camTop">카메라 준비 중...</div>
+ <div id="camBot">
+  <div id="camSum"></div>
+  <div class="row"><button id="camClose" class="sec">닫기</button><button id="camReset" class="sec">다시 읽기</button><button id="camSave" disabled>이 값으로 저장</button></div>
+ </div>
+</div>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
 <script>
 "use strict";
@@ -404,15 +426,17 @@ function startPerson(){
  ["pCrop","pForm","pBar","pCropOld"].forEach(x=>$(x).classList.add("hidden"));
  FIELDS.forEach(id=>{$(id).value="";delete $(id).dataset.touched;setLock(id,false)});
  $("pOcr").textContent="";$("pCheck").textContent="";$("ePerson").textContent="";
- hasPhoto=false;shotAt=null;$("fFile").value="";$("bShot").textContent="여권 촬영 / 사진 선택";
+ hasPhoto=false;shotAt=null;$("fFile").value="";$("bShot").textContent="여권 촬영 (테두리에 맞추기)";
 }
-$("bShot").onclick=()=>$("fFile").click();
+$("bShot").onclick=()=>{if(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia)camOpen();else $("fFile").click()};
+$("bShotOld").onclick=()=>$("fFile").click();
 $("fFile").onchange=async e=>{
  const f=e.target.files[0];if(!f)return;
  shotAt=new Date();keepPhoto="";keepPass="";keepThumb="";$("pCropOld").classList.add("hidden");curUpd=null;curRej=[];curOld=null;clearHints();
  FIELDS.forEach(id=>{delete $(id).dataset.touched});
  $("pOcr").textContent="사진 처리 중...";
- const bmp=await createImageBitmap(f,{imageOrientation:"from-image"}).catch(()=>createImageBitmap(f));
+ diag=[];const bmp=await createImageBitmap(f,{imageOrientation:"from-image"}).catch(()=>{diag.push("방향옵션X");return createImageBitmap(f)});
+ diag.push(`파일 ${f.type||"?"} ${Math.round(f.size/1024)}KB ${bmp.width}x${bmp.height}`);
  const sc=Math.min(1,2000/Math.max(bmp.width,bmp.height));bmp.close&&setTimeout(()=>bmp.close(),0);
  srcCanvas.width=Math.round(bmp.width*sc);srcCanvas.height=Math.round(bmp.height*sc);
  srcCanvas.getContext("2d").drawImage(bmp,0,0,srcCanvas.width,srcCanvas.height);
@@ -563,10 +587,10 @@ function parseNames(txt,mrzSur){
  if(si>=0){for(let i=si+1;i<=si+3&&i<lines.length;i++){const t=upTokens(lines[i]).filter(w=>w!==sur);if(t.length){giv=t.slice(0,3).join(" ");break}}}
  return{ko,en:[sur,giv].filter(Boolean).join(" ")};
 }
-let mrzWorker=null,korWorker=null,mrzGeo=null;
+let mrzWorker=null,korWorker=null,mrzGeo=null,diag=[],mrzEngine="";
 const MRZ_LANG="https://cdn.jsdelivr.net/gh/DoubangoTelecom/tesseractMRZ@1e7adfecda5f3c9ae1fb12cf6b4b8c3958c63e46/tessdata_fast"; // 여권 하단 코드 전용 글꼴 학습 데이터(1.4MB, BSD)
 async function getMrz(){if(!mrzWorker){const to=new Promise((_,rej)=>setTimeout(()=>rej(new Error("timeout")),25000)); // 전용 데이터 다운로드가 막히거나 느리면 25초 후 일반 영어 데이터로
-  mrzWorker=await Promise.race([Tesseract.createWorker("mrz",1,{langPath:MRZ_LANG,gzip:false,errorHandler:()=>{}}),to]).catch(()=>Tesseract.createWorker("eng"));await mrzWorker.setParameters({tessedit_char_whitelist:"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<",tessedit_pageseg_mode:"6"})}return mrzWorker}
+  mrzEngine="mrz";mrzWorker=await Promise.race([Tesseract.createWorker("mrz",1,{langPath:MRZ_LANG,gzip:false,errorHandler:()=>{}}),to]).catch(e=>{mrzEngine="eng("+String(e&&e.message||e).slice(0,30)+")";return Tesseract.createWorker("eng")});await mrzWorker.setParameters({tessedit_char_whitelist:"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<",tessedit_pageseg_mode:"6"})}return mrzWorker}
 async function getKor(){if(!korWorker){korWorker=await Tesseract.createWorker(["kor","eng"]);await korWorker.setParameters({tessedit_pageseg_mode:"11"})}return korWorker}
 function region(y0,y1,maxW,filter,src){
  src=src||srcCanvas;const W=src.width,H=src.height,sy=Math.round(H*y0),sh=Math.round(H*(y1-y0));
@@ -625,7 +649,11 @@ function mrzPick(lines){ // OCR 줄 목록에서 MRZ 2줄로 가장 그럴듯한
  for(let i=0;i+1<lines.length;i++){const a=mrzClean(lines[i].text),b=mrzClean(lines[i+1].text);
   if(a.length<30||b.length<30)continue;const p=parseMRZ(a+"\n"+b);if(!p)continue;
   if(!best||p.score>best.p.score)best={p,i}}
- return best;
+ if(best)return best;
+ // 줄이 잘리거나 글자가 빠져 해석이 안 될 때도, '<'와 숫자가 많은 두 줄을 MRZ 자리로 보고 2단계(확대해서 다시 읽기)로 넘김
+ let wb=null;for(let i=0;i+1<lines.length;i++){const a=mrzClean(lines[i].text),b=mrzClean(lines[i+1].text);if(a.length<15||b.length<15)continue;
+  const sc=(a+b).replace(/[^<0-9]/g,"").length+(a.match(/<</)?10:0);if(!wb||sc>wb.sc)wb={sc,i}}
+ return wb&&wb.sc>=12?{p:{score:-1},i:wb.i,weak:true}:null;
 }
 function lineGeo(l,sc,sy){ // tesseract 줄 좌표 → 원본 좌표 (중심, 기울기, 길이)
  const b=l.bbox,bl=l.baseline||{};let ang=0;if(bl.x1>bl.x0+10)ang=Math.atan2(bl.y1-bl.y0,bl.x1-bl.x0);
@@ -636,15 +664,16 @@ async function readMRZ(src,say){
  for(const frac of [0.55,0.35]){ // 1단계: 하단에서 MRZ 줄 위치 찾기
   const R=region(1-frac,1,2400,"grayscale(1) contrast(1.6)",src);
   const r=await w.recognize(R.c,{},{blocks:true,text:true});freeC(R.c);
-  const pk=mrzPick(tLines(r.data));
-  if(pk&&(!best||pk.p.score>best.p.score)){const ls=tLines(r.data);best={p:pk.p,g1:lineGeo(ls[pk.i],R.sc,R.sy),g2:lineGeo(ls[pk.i+1],R.sc,R.sy)}}
+  const pk=mrzPick(tLines(r.data));diag.push(`${src.width}x${src.height} 하단${Math.round(frac*100)}%: 점수${pk?pk.p.score:"-"} [${r.data.text.split("\n").map(mrzClean).filter(x=>x.length>=20).slice(-2).map(x=>x.slice(0,22)).join(" / ")||"긴 줄 없음"}]`);
+  if(pk&&(!best||pk.p.score>best.p.score)){if(pk.weak)diag.push("줄 위치만 찾음");const ls=tLines(r.data);best={p:pk.p,g1:lineGeo(ls[pk.i],R.sc,R.sy),g2:lineGeo(ls[pk.i+1],R.sc,R.sy)}}
   if(best&&best.p.score>=6)break;
  }
  if(!best)return null;
  // 2단계: MRZ 두 줄만 바르게 세우고 크게 확대해서 다시 읽기 (점수가 만점이 아닐 때)
  const g1=best.g1,g2=best.g2,ang=Math.abs(g2.ang)<0.35?g2.ang:0;
- const d=Math.max(Math.hypot(g2.cx-g1.cx,g2.cy-g1.cy),g2.h*1.5),len=Math.max(g1.w,g2.w)/Math.cos(ang);
- const cx=(g1.cx+g2.cx)/2,cy=(g1.cy+g2.cy)/2,sc=Math.min(4,90/d);
+ const d=Math.max(Math.hypot(g2.cx-g1.cx,g2.cy-g1.cy),g2.h*1.5);let len=Math.max(g1.w,g2.w)/Math.cos(ang);
+ let cx=(g1.cx+g2.cx)/2;const cy=(g1.cy+g2.cy)/2,sc=Math.min(4,90/d);
+ if(best.p.score<0){len=Math.max(len,src.width*0.92);cx=src.width/2} // 위치만 대략 찾은 경우: 가로 전체를 다시 읽음
  const names=[];const addName=p=>{if(p&&p.okName&&p.score>=3)names.push(p.en)};addName(best.p);
  // 이름 칸에는 검증번호가 없으므로 항상 여러 방식으로 다시 읽어 다수결로 정함
  const vars=[c=>c,c=>binarize(c,d*sc*0.9,0.12),c=>binarize(c,d*sc*0.9,0.06)];
@@ -712,6 +741,7 @@ function pickKo(txt,enName,sur){ // OCR 글자 중 한글 이름 고르기
  }
  return bs>=6?ko:"";
 }
+const diagHtml=()=>`<div style="font-size:11px;color:#888;line-height:1.3;margin-top:6px;word-break:break-all">진단(이 화면을 캡처해 보내주세요): 엔진 ${esc(mrzEngine)} · ${esc(diag.join(" · "))}</div>`;
 async function runOCR(tok){
  if(!window.Tesseract){$("pOcr").textContent="자동 인식 엔진을 불러오지 못했습니다(인터넷 필요). 빨간 칸을 직접 입력해 주세요.";lockAll();return}
  setBusy(true);try{await runOCR2(tok)}finally{if(tok===ocrToken){setBusy(false);lockAll()}}
@@ -743,8 +773,8 @@ async function runOCR2(tok){
    msg[0]=mrz.okNo?'<span class="ok">① 국적·여권번호·성별·생년월일·영문이름 인식 완료</span>':'<span class="err">① 여권번호 검증 실패, 꼭 확인하세요</span>';
    $("pCheck").textContent=mrz.okDob?"":"생년월일 검증 실패 가능성 있음, 확인하세요.";
    if(!faceFound)geoCrop();
-  }else{mrz=null;msg[0]='<span class="err">① 하단 코드를 읽지 못했습니다. 여권 사진면을 화면 가득, 반사 없이 다시 찍어 주세요.</span>'}
- }catch(e){msg[0]="① 코드 인식 실패. 직접 입력하세요."}
+  }else{mrz=null;msg[0]='<span class="err">① 하단 코드를 읽지 못했습니다. 여권 사진면을 화면 가득, 반사 없이 다시 찍어 주세요.</span>'+diagHtml()}
+ }catch(e){diag.push("오류 "+String(e&&e.message||e).slice(0,60));msg[0]="① 코드 인식 실패. 직접 입력하세요."+diagHtml()}
  say();
  try{
   msg[1]="② 한글 이름 읽는 중... (처음엔 30초 이상 걸릴 수 있음)";say();
@@ -780,6 +810,136 @@ async function runOCR2(tok){
  }catch(e){msg[1]="② 이름 인식 실패. 직접 입력하세요."}
  say();
 }
+
+/* ---------- 실시간 촬영: 노란 테두리에 여권을 맞추면 읽힌 글씨를 여권 위에 바로 표시 ---------- */
+const PG={w:125,h:88,lx:4,ly:78}; // 여권 사진면 크기(mm)와 하단 코드 2번째 줄 왼쪽 끝 위치(왼쪽 위 기준 mm)
+const LAY={ // 각 칸 글씨 위치 (하단 코드 2번째 줄 왼쪽 끝 기준: 오른쪽 mm, 위쪽 mm)
+ new:{pNo:[71,57.5],sur:[38,51.5],giv:[38,45.6],pKo:[38,33.5],pDob:[38,28.7],pSex:[71,28.7],pNat:[38,22.8]},
+ old:{pNo:[76,61.6],sur:[36,55.8],giv:[36,50.4],pNat:[36,44.9],pDob:[36,39.2],pSex:[36,33],pKo:[73,21]}};
+let cam=null;
+const camLayout=no=>/^[A-Z]\d{3}[A-Z]\d{4}$/.test(no||"")?"new":/^[A-Z]\d{8}$/.test(no||"")?"old":null;
+function camGeom(){return cam&&cam.G||camCalc()}
+function camCalc(){
+ const v=$("camV"),ew=v.clientWidth,eh=v.clientHeight,vw=v.videoWidth||1,vh=v.videoHeight||1;
+ const s=Math.max(ew/vw,eh/vh),ox=(ew-vw*s)/2,oy=(eh-vh*s)/2;
+ const top=$("camTop").offsetHeight+8,avH=eh-top-$("camBot").offsetHeight-8;
+ const gw=Math.max(100,Math.min(ew*0.94,avH*PG.w/PG.h)),gh=gw*PG.h/PG.w,gx=(ew-gw)/2,gy=top+Math.max(0,(avH-gh)/2);
+ return{s,ox,oy,gx,gy,gw,gh};
+}
+function camPlaceGuide(){if(!cam)return;cam.G=null;camDraw();const G=cam.G=camCalc(),g=$("camGuide").style;g.left=G.gx+"px";g.top=G.gy+"px";g.width=G.gw+"px";g.height=G.gh+"px";camDraw()}
+async function camOpen(){
+ cam={on:true,n:0,mrz:{},names:[],kos:{},best:null,last:null,fails:0};
+ $("cam").classList.remove("hidden");$("camTop").textContent="카메라 준비 중...";$("camSum").innerHTML="";$("camLbl").innerHTML="";$("camSave").disabled=true;
+ try{
+  const me=cam,st=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:"environment"},width:{ideal:3840},height:{ideal:2160}}});
+  if(cam!==me){st.getTracks().forEach(t=>t.stop());return}
+  me.stream=st;
+ }catch(e){camClose();alert("카메라를 열 수 없습니다. 아이폰 설정에서 카메라 허용을 확인하거나, '사진으로 찍기 (예전 방식)'을 사용하세요.");return}
+ const v=$("camV");v.srcObject=cam.stream;try{await v.play()}catch(e){}
+ for(let i=0;i<50&&!v.videoWidth;i++)await new Promise(r=>setTimeout(r,100));
+ camPlaceGuide();v.onresize=camPlaceGuide;
+ if(!window.Tesseract){$("camTop").textContent="자동 인식 엔진을 불러오지 못했습니다(인터넷 필요). 닫고 직접 입력해 주세요.";return}
+ $("camTop").textContent="인식 엔진 준비 중... (처음엔 30초 정도 걸릴 수 있음)";
+ try{await getMrz();getKor().catch(()=>{})}catch(e){}
+ camLoop();
+}
+function camClose(){const c=cam;cam=null;if(c){c.on=false;if(c.stream)c.stream.getTracks().forEach(t=>t.stop());if(c.best)freeC(c.best.c)}$("camV").srcObject=null;$("cam").classList.add("hidden")}
+async function camLoop(){const me=cam;
+ while(cam===me&&me.on){
+  const t0=Date.now();
+  try{await camCycle(me)}catch(e){diag.push("cam "+String(e&&e.message||e).slice(0,50))}
+  if(cam!==me)return;camDraw();
+  await new Promise(r=>setTimeout(r,Math.max(60,400-(Date.now()-t0))));
+ }
+}
+function camGrab(){ // 테두리 안(+여유 8%) 화면을 잘라서 캔버스로
+ const v=$("camV"),G=camGeom(),mg=0.08;
+ let sx=(G.gx-G.gw*mg-G.ox)/G.s,sy=(G.gy-G.gh*mg-G.oy)/G.s,sw=G.gw*(1+2*mg)/G.s,sh=G.gh*(1+2*mg)/G.s;
+ sx=Math.max(0,sx);sy=Math.max(0,sy);sw=Math.min(v.videoWidth-sx,sw);sh=Math.min(v.videoHeight-sy,sh);
+ const k=Math.min(1,1800/sw),c=document.createElement("canvas");c.width=Math.round(sw*k);c.height=Math.round(sh*k);
+ c.getContext("2d").drawImage(v,sx,sy,sw,sh,0,0,c.width,c.height);
+ return{c,map:{sx,sy,k,G},ppm:G.gw/G.s*k/PG.w,top:((G.gy-G.oy)/G.s-sy)*k};
+}
+async function camCycle(me){
+ const v=$("camV");if(!v.videoWidth||v.readyState<2)return;
+ const F=camGrab(),pc=F.c;me.n++;let geo=null,p=null,keep=false;
+ // ① 하단 코드: 테두리 아래쪽 30% 줄만 잘라서 확대해 읽기 (짝수 회: 밝기 보정, 홀수 회: 이진화로 번갈아)
+ const y0=Math.max(0,Math.round(F.top+(PG.h-30)*F.ppm)),sc=Math.min(2.5,Math.max(1,13/F.ppm));
+ let st=document.createElement("canvas");st.width=Math.round(pc.width*sc);st.height=Math.max(1,Math.round((pc.height-y0)*sc));
+ st.getContext("2d").drawImage(pc,0,y0,pc.width,pc.height-y0,0,0,st.width,st.height);
+ const s2=stretch(st,0);freeC(st);st=s2;if(me.n%2===0)binarize(st,4.2*F.ppm*sc,0.12);
+ const r=await (await getMrz()).recognize(st,{},{blocks:true,text:true});freeC(st);if(cam!==me){freeC(pc);return}
+ const ls=tLines(r.data),pk=mrzPick(ls);
+ if(pk&&pk.p.okNo&&pk.p.okDob&&pk.p.score>=4){p=pk.p; // 검증번호 2개 이상 맞아야 채택(우연한 오인식 방지)
+  const g1=lineGeo(ls[pk.i],sc,y0),g2=lineGeo(ls[pk.i+1],sc,y0),ang=Math.abs(g2.ang)<0.35?g2.ang:0,len=Math.max(g1.w,g2.w)/Math.cos(ang);
+  const ppm=len/110,u={x:Math.cos(ang),y:Math.sin(ang)},vv={x:-Math.sin(ang),y:Math.cos(ang)},L={x:g2.cx-u.x*len/2,y:g2.cy-u.y*len/2};
+  geo={ppm,ang,at:(mx,mu)=>({x:L.x+u.x*mx*ppm-vv.x*mu*ppm,y:L.y+u.y*mx*ppm-vv.y*mu*ppm})};
+  const key=[p.no,p.dob,p.sex,p.nat].join("|"),m=me.mrz[key]||(me.mrz[key]={p,n:0});m.n++;if(p.score>m.p.score)m.p=p;
+  if(p.okName&&p.en)me.names.push(p.en);me.fails=0;
+ }else me.fails++;
+ me.last={geo,map:F.map,n:me.n};
+ const B=camBestMrz(me);
+ // ② 한글 이름: 하단 코드 위치로 한글성명 칸만 잘라 읽기
+ let koHit=false;
+ if(geo&&B&&B.p.nat==="KOR"){
+  const lay=camLayout(B.p.no),zs=lay==="old"?[[71,98,17,26]]:lay==="new"?[[33,60,32,40]]:[[33,60,32,40],[71,98,17,26]];
+  const z=zs[me.n%zs.length],w=await getKor();await w.setParameters({tessedit_pageseg_mode:"7"});
+  const a=geo.at(z[0],z[2]),b=geo.at(z[1],z[3]),zs2=Math.min(5,[12,17,9][Math.floor(me.n/2)%3]/geo.ppm); // 회차마다 확대 크기를 바꿔 가며 읽기
+  const zc=stretch(cropRot(pc,(a.x+b.x)/2,(a.y+b.y)/2,(z[1]-z[0])*geo.ppm,(z[3]-z[2])*geo.ppm,geo.ang,zs2,"grayscale(1)"),16);
+  const t=(await w.recognize(zc)).data.text;freeC(zc);if(cam!==me){freeC(pc);return}
+  const names=camNames(me),ko0=pickKo(t,names,B.p.sur),ko=ko0?fixKo(ko0,names):"";
+  if(ko){const ok=names.some(e=>romMatch(ko,e));me.kos[ko]=(me.kos[ko]||0)+(ok?3:1);koHit=ok}
+ }
+ // 가장 잘 읽힌 장면(점수 높은 하단 코드, 한글 이름 일치)을 저장용 사진으로 보관
+ if(geo){const q=p.score*10+(koHit?5:0)+(p.okName?2:0);if(!me.best||q>me.best.q){if(me.best)freeC(me.best.c);me.best={c:pc,geo,q};keep=true}}
+ if(!keep)freeC(pc);
+}
+function camBestMrz(me){let b=null;for(const m of Object.values(me.mrz))if(!b||m.n*2+m.p.score>b.n*2+b.p.score)b=m;return b}
+function camNames(me){const B=camBestMrz(me);return me.names.length?me.names:(B&&B.p.en?[B.p.en]:[])}
+function camVals(me){
+ const B=camBestMrz(me);if(!B)return null;const p=B.p,names=camNames(me);
+ let ko="",kn=0;for(const [k,n] of Object.entries(me.kos))if(n>kn){kn=n;ko=k}
+ const en=names.length?pickName(names,ko):"",sur=p.sur&&en.startsWith(p.sur)?p.sur:en.split(" ")[0]||"",giv=en.slice(sur.length).trim();
+ const koOk=!!ko&&!!en&&romMatch(ko,en),agree=B.n>=2;
+ return{p,en,ko,sur,giv,lay:camLayout(p.no),
+  f:{pNo:[p.no,p.okNo&&agree],sur:[sur,koOk||names.length>=2],giv:[giv,koOk||names.length>=2],pKo:[ko,koOk],pDob:[p.dob,p.okDob&&agree],pSex:[p.sex==="M"?"M (남)":p.sex==="F"?"F (여)":"",p.okComp&&agree],pNat:[p.nat,p.okComp&&agree]}};
+}
+function camDraw(){
+ const me=cam;if(!me)return;const V=camVals(me),G=camGeom();
+ // 상태 안내
+ let msg,allOk=false;
+ if(!V)msg=me.n<2?"여권 사진면을 노란 테두리에 꽉 맞춰 주세요":"아래 영문·숫자 2줄이 아직 안 읽힙니다. 테두리에 맞추고, 빛 반사가 없게 각도를 조금씩 바꿔 보세요";
+ else{allOk=Object.values(V.f).every(x=>x[1]||(x===V.f.pKo&&V.p.nat!=="KOR"));
+  msg=allOk?"✓ 모두 읽었습니다. 여권 글씨와 같으면 [이 값으로 저장]":!V.f.pKo[1]&&V.p.nat==="KOR"?"한글 이름 읽는 중... 한글 이름에 반사가 없게 해 주세요":"한 번 더 확인 중... 그대로 잠시 들고 계세요"}
+ $("camTop").textContent=msg;$("camGuide").classList.toggle("ok",allOk);$("camSave").disabled=!V;
+ // 아래 요약표
+ const NM={pKo:"한글 이름",sur:"영문 성",giv:"영문 이름",pNat:"국적",pNo:"여권번호",pSex:"성별",pDob:"생년월일"};
+ $("camSum").innerHTML=Object.keys(NM).map(k=>{const x=V&&V.f[k];return`<div class="k">${NM[k]}</div><div class="v${x&&x[1]?" ok":""}">${x&&x[0]?esc(x[0])+(x[1]?" ✓":""):"…"}</div>`}).join("");
+ // 여권 위 각 칸 위치에 글씨 겹쳐 표시
+ if(!V||!V.lay){$("camLbl").innerHTML="";return}
+ const L=me.last,live=L&&L.geo&&me.n-L.n<=1,m=G.gw/PG.w,fs=Math.max(12,Math.min(20,3.4*m));
+ const pos=(mx,mu)=>{if(live){const q=L.geo.at(mx,mu),M=L.map;return{x:(M.sx+q.x/M.k)*M.G.s+M.G.ox,y:(M.sy+q.y/M.k)*M.G.s+M.G.oy}}
+  return{x:G.gx+(PG.lx+mx)*m,y:G.gy+(PG.ly-mu)*m}};
+ $("camLbl").innerHTML=Object.entries(LAY[V.lay]).map(([k,[mx,mu]])=>{const x=V.f[k];if(!x||!x[0])return"";const q=pos(mx,mu+1.6);
+  return`<div class="cl${x[1]?" ok":""}" style="left:${q.x.toFixed(1)}px;top:${q.y.toFixed(1)}px;font-size:${fs.toFixed(1)}px">${esc(x[0])}</div>`}).join("");
+}
+window.addEventListener("resize",()=>cam&&camPlaceGuide());
+document.addEventListener("visibilitychange",()=>{if(document.hidden&&cam)camClose()});
+$("camClose").onclick=camClose;
+$("camReset").onclick=()=>{if(!cam)return;if(cam.best)freeC(cam.best.c);Object.assign(cam,{mrz:{},names:[],kos:{},best:null,last:null,fails:0});camDraw()};
+$("camSave").onclick=async()=>{
+ const me=cam;if(!me)return;const V=camVals(me),b=me.best;if(!V||!b)return;
+ me.on=false;me.best=null;camClose();
+ shotAt=new Date();keepPhoto="";keepPass="";keepThumb="";$("pCropOld").classList.add("hidden");curUpd=null;curRej=[];curOld=null;clearHints();
+ FIELDS.forEach(id=>{delete $(id).dataset.touched;$(id).value=""});
+ srcCanvas.width=b.c.width;srcCanvas.height=b.c.height;srcCanvas.getContext("2d").drawImage(b.c,0,0);freeC(b.c);
+ hasPhoto=true;$("bShot").textContent="다시 촬영";mrzGeo=b.geo;ocrToken++;
+ autoSet("pNo",V.p.no);autoSet("pSex",V.p.sex);autoSet("pDob",V.p.dob);autoSet("pNat",V.p.nat);autoSet("pEn",V.en);autoSet("pKo",V.ko);
+ lockAll();$("pCheck").textContent=V.p.okDob?"":"생년월일 검증 실패 가능성 있음, 확인하세요.";
+ ["pCrop","pForm","pBar"].forEach(x=>$(x).classList.remove("hidden"));
+ $("pOcr").innerHTML=V.ko||V.p.nat!=="KOR"?'<span class="ok">촬영 화면에서 확인한 값을 넣었습니다. 얼굴 사진 위치만 확인하세요.</span>':'<span class="err">한글 이름을 못 읽었습니다. 빨간 칸에 직접 입력하세요.</span>';
+ await autoCrop();if(!faceFound)geoCrop();
+};
 
 /* ---------- 중복 확인 ---------- */
 let curUpd=null,curRej=[],curOld=null,dupBusy=false;

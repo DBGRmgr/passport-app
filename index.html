@@ -90,7 +90,7 @@ button:disabled{opacity:.5}
 #camGuide{position:absolute;border:3px solid #ffeb3b;border-radius:10px;box-shadow:0 0 0 9999px #0008;pointer-events:none}
 #camGuide.ok{border-color:#4caf50}
 #camLbl{position:absolute;inset:0;pointer-events:none}
-.cl{position:absolute;transform:translateY(-100%);background:#000b;color:#ffeb3b;font-weight:bold;padding:0 4px;border-radius:4px;white-space:nowrap;line-height:1.25}
+.cl{position:absolute;background:#000b;color:#ffeb3b;font-weight:bold;padding:0 4px;border-radius:4px;white-space:nowrap;line-height:1.25}
 .cl.ok{color:#69f0ae}
 #camTop{position:absolute;left:0;right:0;top:0;padding:calc(10px + env(safe-area-inset-top)) 12px 8px;color:#fff;font-size:15px;text-align:center;background:#000a}
 #camBot{position:absolute;left:0;right:0;bottom:0;padding:8px 12px calc(10px + env(safe-area-inset-bottom));background:#000d;color:#fff}
@@ -703,7 +703,10 @@ const KO_SIM=[[11,6,7,18],[0,15,1],[3,16,5,4],[12,14,9,13]]; // 모양이 비슷
 function fixKo(ko,names){ // 한글 이름이 영문과 안 맞으면 한 글자의 첫소리만 비슷한 것으로 바꿔 맞는 것이 딱 하나면 고쳐줌 (예: 황목이→황옥이)
  if(!ko||names.some(e=>romMatch(ko,e)))return ko;const ch=[...ko],hits=new Set();
  ch.forEach((c,i)=>{const k=c.charCodeAt(0)-0xAC00;if(k<0||k>11171)return;const ini=Math.floor(k/588),rest=k%588;
-  KO_SIM.filter(g=>g.includes(ini)).flat().forEach(n=>{if(n===ini)return;const t=[...ch];t[i]=String.fromCharCode(0xAC00+n*588+rest);const w=t.join("");if(names.some(e=>romMatch(w,e)))hits.add(w)})});
+  const tryW=code=>{const t=[...ch];t[i]=String.fromCharCode(0xAC00+code);const w=t.join("");if(names.some(e=>romMatch(w,e)))hits.add(w)};
+  KO_SIM.filter(g=>g.includes(ini)).flat().forEach(n=>{if(n!==ini)tryW(n*588+rest)});
+  const med=Math.floor(rest/28),fin=rest%28; // 모음도 비슷한 것끼리 (예: 박현에→박현애)
+  [[1,5],[3,7],[10,11,15],[4,6],[8,12],[13,17],[18,19],[0,2]].filter(g=>g.includes(med)).flat().forEach(m=>{if(m!==med)tryW(ini*588+m*28+fin)})});
  return hits.size===1?[...hits][0]:ko;
 }
 function pickName(names,ko){ // 여러 번 읽은 영문 이름 중: 한글 이름과 소리가 맞는 것 > 많이 나온 것 > 성이 흔한 성인 것
@@ -771,7 +774,7 @@ async function runOCR2(tok){
     return stretch(cropRot(srcCanvas,(a.x+b.x)/2,(a.y+b.y)/2,(x1-x0)*g.ppm,(u1-u0)*g.ppm,g.ang,sc,"grayscale(1)"),16)};
    const tryTxt=t=>{txt+="\n"+t;const k=pickKo(t,en,sur);if(!k)return;const s=en.some(e=>romMatch(k,e))?2:1;if(s>best){best=s;ko=k}};
    // 같은 자리를 크기·읽기 방식을 바꿔 여러 번 읽고, 영문 이름과 소리가 맞는 결과가 나오면 바로 채택
-   outer:for(const z of [[33,60,32,40],[71,98,17,26]])for(const ppm of [12,17,8,24])for(const psm of ["7","13"]){
+   outer:for(const z of [[35,62,33.6,39.2],[73,99,18.4,24]])for(const ppm of [12,17,8,24])for(const psm of ["7","13"]){
     await w.setParameters({tessedit_pageseg_mode:psm});
     const c=zone(...z,ppm),t=(await w.recognize(c)).data.text;freeC(c);if(tok!==ocrToken)return;tryTxt(t);
     if(best===2)break outer;
@@ -800,8 +803,13 @@ async function runOCR2(tok){
 /* ---------- 실시간 촬영: 노란 테두리에 여권을 맞추면 읽힌 글씨를 여권 위에 바로 표시 ---------- */
 const PG={w:125,h:88,lx:4,ly:78}; // 여권 사진면 크기(mm)와 하단 코드 2번째 줄 왼쪽 끝 위치(왼쪽 위 기준 mm)
 const LAY={ // 각 칸 글씨 위치 (하단 코드 2번째 줄 왼쪽 끝 기준: 오른쪽 mm, 위쪽 mm)
- new:{pNo:[71,57.5],sur:[38,51.5],giv:[38,45.6],pKo:[38,33.5],pDob:[38,28.7],pSex:[71,28.7],pNat:[38,22.8]},
- old:{pNo:[76,61.6],sur:[36,55.8],giv:[36,50.4],pNat:[36,44.9],pDob:[36,39.2],pSex:[36,33],pKo:[73,21]}};
+ // 세 번째 값: 겹쳐 보일 자리 L=글씨 왼쪽(사진 쪽), R=글씨 오른쪽, B=글씨 바로 아래 → 여권 글씨를 가리지 않고 나란히 대조
+ new:{pNo:[70,58.1,"B"],sur:[37.6,52.2,"L"],giv:[37.6,46.9,"L"],pKo:[37,36.4,"L"],pDob:[37.4,29.4,"L"],pSex:[74,29,"R"],pNat:[37.4,23.5,"L"]},
+ old:{pNo:[83,62,"B"],sur:[38,56.8,"L"],giv:[38,51.4,"L"],pNat:[37.7,46,"L"],pDob:[37.5,40.3,"L"],pSex:[37.3,34.2,"L"],pKo:[75,21.2,"B"]}};
+// 한글성명 칸 (존황이 표시해 준 빨간 박스 기준, mm): 신여권 사진 오른쪽 이름 아래, 구여권 오른쪽 아래
+const KOZ={new:{x:[35,62],c:[36.4,35,37.8,33.8],box:[33.5,43]},old:{x:[73,99],c:[21.2,20,22.4],box:[13.5,27]}};
+function koVariants(lay){const out=[];for(const l of lay?[lay]:["new","old"]){const z=KOZ[l];
+ for(const f of [0,1])for(const ppm of [12,16]){z.c.forEach(c=>out.push({x:z.x,u:[c-2.8,c+2.8],psm:"7",f,ppm}));out.push({x:z.x,u:z.box,psm:"6",f,ppm})}}return out}
 let cam=null;
 const camLayout=no=>/^[A-Z]\d{3}[A-Z]\d{4}$/.test(no||"")?"new":/^[A-Z]\d{8}$/.test(no||"")?"old":null;
 function camGeom(){const G=cam&&cam.G||camCalc();return cam&&cam.img?{...G,s:cam.z,ox:cam.tx,oy:cam.ty}:G}
@@ -899,13 +907,16 @@ async function camCycle(me){
  // ② 한글 이름: 하단 코드 위치로 한글성명 칸만 잘라 읽기
  let koHit=false;
  if(geo&&B&&B.p.nat==="KOR"){
-  const lay=camLayout(B.p.no),zs=lay==="old"?[[71,98,17,26]]:lay==="new"?[[33,60,32,40]]:[[33,60,32,40],[71,98,17,26]];
-  const z=zs[me.n%zs.length],w=await getKor();await w.setParameters({tessedit_pageseg_mode:"7"});
-  const a=geo.at(z[0],z[2]),b=geo.at(z[1],z[3]),zs2=Math.min(5,[12,17,9][Math.floor(me.n/2)%3]/geo.ppm); // 회차마다 확대 크기를 바꿔 가며 읽기
-  const zc=stretch(cropRot(pc,(a.x+b.x)/2,(a.y+b.y)/2,(z[1]-z[0])*geo.ppm,(z[3]-z[2])*geo.ppm,geo.ang,zs2,"grayscale(1)"),16);
-  const t=(await w.recognize(zc)).data.text;freeC(zc);if(cam!==me){freeC(pc);return}
-  const names=camNames(me),ko0=pickKo(t,names,B.p.sur),ko=ko0?fixKo(ko0,names):"";
-  if(ko){const ok=names.some(e=>romMatch(ko,e));me.kos[ko]=(me.kos[ko]||0)+(ok?3:1);koHit=ok}
+  const VS=koVariants(camLayout(B.p.no)),w=await getKor(),tries=Object.values(me.kos).some(n=>n>=3)?1:3; // 아직 못 맞췄으면 한 번에 3가지 방식으로
+  for(let t0=0;t0<tries&&!koHit;t0++){
+   const z=VS[(me.kn=(me.kn||0)+1)%VS.length];await w.setParameters({tessedit_pageseg_mode:z.psm});
+   const a=geo.at(z.x[0],z.u[0]),b=geo.at(z.x[1],z.u[1]),zs2=Math.min(5,z.ppm/geo.ppm);
+   let zc=stretch(cropRot(pc,(a.x+b.x)/2,(a.y+b.y)/2,(z.x[1]-z.x[0])*geo.ppm,(z.u[1]-z.u[0])*geo.ppm,geo.ang,zs2,"grayscale(1)"),16);
+   if(z.f)binarize(zc,4*z.ppm,0.15); // 무늬 배경·반사 대비: 지역 이진화 버전
+   const t=(await w.recognize(zc)).data.text;freeC(zc);if(cam!==me){freeC(pc);return}
+   const names=camNames(me),ko0=pickKo(t,names,B.p.sur),ko=ko0?fixKo(ko0,names):"";
+   if(ko){const ok=names.some(e=>romMatch(ko,e));me.kos[ko]=(me.kos[ko]||0)+(ok?3:1);koHit=ok}
+  }
  }
  // 가장 잘 읽힌 장면(점수 높은 하단 코드, 한글 이름 일치)을 저장용 사진으로 보관
  if(geo){const q=p.score*10+(koHit?5:0)+(p.okName?2:0);if(!me.best||q>me.best.q){if(me.best)freeC(me.best.c);me.best={c:pc,geo,q};keep=true}}
@@ -934,11 +945,12 @@ function camDraw(){
  $("camSum").innerHTML=Object.keys(NM).map(k=>{const x=V&&V.f[k];return`<div class="k">${NM[k]}</div><div class="v${x&&x[1]?" ok":""}">${x&&x[0]?esc(x[0])+(x[1]?" ✓":""):"…"}</div>`}).join("");
  // 여권 위 각 칸 위치에 글씨 겹쳐 표시
  if(!V||!V.lay){$("camLbl").innerHTML="";return}
- const L=me.last,live=L&&L.geo&&me.n-L.n<=1,m=G.gw/PG.w,fs=Math.max(12,Math.min(20,3.4*m));
+ const L=me.last,live=L&&L.geo&&me.n-L.n<=1,m=G.gw/PG.w,fs=Math.max(11,Math.min(17,3*m));
  const pos=(mx,mu)=>{if(live){const q=L.geo.at(mx,mu),M=L.map;return{x:(M.sx+q.x/M.k)*G.s+G.ox,y:(M.sy+q.y/M.k)*G.s+G.oy}}
   return{x:G.gx+(PG.lx+mx)*m,y:G.gy+(PG.ly-mu)*m}};
- $("camLbl").innerHTML=Object.entries(LAY[V.lay]).map(([k,[mx,mu]])=>{const x=V.f[k];if(!x||!x[0])return"";const q=pos(mx,mu+1.6);
-  return`<div class="cl${x[1]?" ok":""}" style="left:${q.x.toFixed(1)}px;top:${q.y.toFixed(1)}px;font-size:${fs.toFixed(1)}px">${esc(x[0])}</div>`}).join("");
+ $("camLbl").innerHTML=Object.entries(LAY[V.lay]).map(([k,[mx,mu,md]])=>{const x=V.f[k];if(!x||!x[0])return"";
+  const q=md==="L"?pos(mx-1.5,mu):md==="R"?pos(mx+3,mu):pos(mx,mu-2.2),tf=md==="L"?"translate(-100%,-50%)":md==="R"?"translate(0,-50%)":"translate(0,0)";
+  return`<div class="cl${x[1]?" ok":""}" style="left:${q.x.toFixed(1)}px;top:${q.y.toFixed(1)}px;font-size:${fs.toFixed(1)}px;transform:${tf}">${esc(x[0])}</div>`}).join("");
 }
 window.addEventListener("resize",()=>cam&&camPlaceGuide());
 document.addEventListener("visibilitychange",()=>{if(document.hidden&&cam)camClose()});

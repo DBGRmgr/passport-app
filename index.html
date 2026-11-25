@@ -96,7 +96,10 @@ button:disabled{opacity:.5}
 #camBot{position:absolute;left:0;right:0;bottom:0;padding:8px 12px calc(10px + env(safe-area-inset-bottom));background:#000d;color:#fff}
 #camSum{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:15px}
 #camSum .k{color:#aaa}#camSum .v{font-weight:bold;color:#ffeb3b}#camSum .v.ok{color:#69f0ae}
-#camBot .row button{margin-top:8px}
+#camBot .row button{margin-top:8px;font-size:15px;padding:13px 4px;white-space:nowrap}
+.ovt{position:absolute;width:auto;margin:0;padding:6px 10px;font-size:13px;background:#333;color:#fff;border:1px solid #777}
+#camLbl.off{display:none}
+#camHint{position:absolute;left:0;right:0;text-align:center;color:#ffeb3b;font-size:15px;font-weight:bold;text-shadow:0 1px 3px #000;pointer-events:none;transform:translateY(-100%)}
 .edbox{border:1px solid #ccc;border-radius:10px;padding:10px;margin-top:6px;background:#fafafa}
 </style>
 </head>
@@ -235,11 +238,11 @@ button:disabled{opacity:.5}
 </main>
 <div id="cam" class="hidden">
  <video id="camV" playsinline muted autoplay></video><canvas id="camI" class="hidden"></canvas>
- <div id="camGuide"></div><div id="camLbl"></div>
+ <div id="camGuide"></div><div id="camLbl"></div><div id="camHint"></div><button id="camOv" class="ovt">오버레이 켜기</button>
  <div id="camTop">카메라 준비 중...</div>
  <div id="camBot">
   <div id="camSum"></div>
-  <div class="row"><button id="camClose" class="sec">닫기</button><button id="camRot" class="sec hidden">↻ 회전</button><button id="camReset" class="sec">다시 읽기</button><button id="camSave" disabled>이 값으로 저장</button></div>
+  <div class="row"><button id="camClose" class="sec">뒤로 가기</button><button id="camRot" class="sec hidden">↻ 회전</button><button id="camReset" class="sec">다시 읽기</button><button id="camSave" disabled>이 값으로 저장</button></div>
  </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
@@ -531,7 +534,7 @@ function mrzName(f){ // MRZ 1번째 줄 이름: 성<<이름<이름<<<<
  const en=[sur,...giv].filter(Boolean).join(" ");
  return{sur:sur.split(" ")[0],en,ok:!!sur&&giv.length>0&&/^[A-Z ]+$/.test(en)&&en.replace(/ /g,"").length<=39};
 }
-const SURN={"김":["KIM","GIM"],"이":["LEE","YI","RHEE","RHIE","I"],"박":["PARK","BAK","PAK"],"최":["CHOI","CHOE"],"정":["JUNG","JEONG","CHUNG","CHEONG"],"강":["KANG","GANG"],"조":["CHO","JO","JOH"],"윤":["YOON","YUN"],"장":["JANG","CHANG"],"임":["LIM","IM","YIM"],"한":["HAN"],"오":["OH","O"],"서":["SEO","SUH"],"신":["SHIN","SIN"],"권":["KWON","GWON"],"황":["HWANG"],"안":["AHN","AN"],"송":["SONG"],"류":["RYU","YOO","YU"],"유":["YOO","YU","RYU"],"전":["JEON","JUN","CHUN"],"홍":["HONG"],"고":["KO","GO","KOH"],"문":["MOON","MUN"],"양":["YANG"],"손":["SON","SOHN"],"배":["BAE","BAI"],"백":["BAEK","BACK","PAIK"],"허":["HEO","HUH","HUR"],"남":["NAM"],"심":["SIM","SHIM"],"노":["NOH","NO","RO","ROH"],"하":["HA"],"곽":["KWAK","GWAK"],"성":["SUNG","SEONG"],"차":["CHA"],"주":["JOO","JU","CHOO"],"우":["WOO","U"],"구":["KOO","KU","GU"],"민":["MIN"],"진":["JIN","CHIN"],"나":["NA","RA"],"지":["JI","CHI"],"엄":["UM","EOM"],"채":["CHAE"],"원":["WON"],"천":["CHUN","CHEON"],"방":["BANG"],"공":["KONG","GONG"],"현":["HYUN","HYEON"],"함":["HAM"],"변":["BYUN","BYEON"],"염":["YEOM","YUM"],"여":["YEO","YUH"],"추":["CHU","CHOO"],"도":["DO","DOH"],"소":["SO"],"석":["SEOK","SUK"],"선":["SUN","SEON"],"설":["SEOL","SUL"],"마":["MA"],"길":["GIL","KIL"],"연":["YEON","YUN"],"위":["WI","WEE"],"표":["PYO"],"명":["MYUNG","MYEONG"],"기":["KI","GI"],"반":["BAN"],"왕":["WANG"],"금":["KEUM","GEUM"],"옥":["OK"],"육":["YUK"],"인":["IN"],"맹":["MAENG"],"제":["JE"],"모":["MO"],"탁":["TAK"],"국":["KOOK","GUK"],"어":["EO","UH"],"은":["EUN"],"편":["PYUN","PYEON"],"용":["YONG"],"예":["YE"],"경":["KYUNG","GYEONG"],"봉":["BONG"],"사":["SA"],"부":["BOO","BU"],"황보":["HWANGBO"],"남궁":["NAMGOONG","NAMGUNG"],"제갈":["JEGAL"],"선우":["SUNWOO"],"독고":["DOKGO"]};
+const SURN={"김":["KIM","GIM"],"이":["LEE","YI","RHEE","RHIE","I"],"박":["PARK","BAK","PAK"],"최":["CHOI","CHOE"],"정":["JUNG","JEONG","CHUNG","CHEONG"],"강":["KANG","GANG"],"조":["CHO","JO","JOH"],"윤":["YOON","YUN"],"장":["JANG","CHANG"],"임":["LIM","IM","YIM"],"한":["HAN"],"오":["OH","O"],"서":["SEO","SUH"],"신":["SHIN","SIN"],"권":["KWON","GWON"],"황":["HWANG"],"안":["AHN","AN"],"송":["SONG"],"류":["RYU","YOO","YU","RYUE","RYOO","YOU"],"유":["YOO","YU","RYU"],"전":["JEON","JUN","CHUN"],"홍":["HONG"],"고":["KO","GO","KOH"],"문":["MOON","MUN"],"양":["YANG"],"손":["SON","SOHN"],"배":["BAE","BAI"],"백":["BAEK","BACK","PAIK"],"허":["HEO","HUH","HUR"],"남":["NAM"],"심":["SIM","SHIM"],"노":["NOH","NO","RO","ROH"],"하":["HA"],"곽":["KWAK","GWAK"],"성":["SUNG","SEONG"],"차":["CHA"],"주":["JOO","JU","CHOO"],"우":["WOO","U"],"구":["KOO","KU","GU"],"민":["MIN"],"진":["JIN","CHIN"],"나":["NA","RA"],"지":["JI","CHI"],"엄":["UM","EOM"],"채":["CHAE"],"원":["WON"],"천":["CHUN","CHEON"],"방":["BANG"],"공":["KONG","GONG"],"현":["HYUN","HYEON"],"함":["HAM"],"변":["BYUN","BYEON"],"염":["YEOM","YUM"],"여":["YEO","YUH"],"추":["CHU","CHOO"],"도":["DO","DOH"],"소":["SO"],"석":["SEOK","SUK"],"선":["SUN","SEON"],"설":["SEOL","SUL"],"마":["MA"],"길":["GIL","KIL"],"연":["YEON","YUN"],"위":["WI","WEE"],"표":["PYO"],"명":["MYUNG","MYEONG"],"기":["KI","GI"],"반":["BAN"],"왕":["WANG"],"금":["KEUM","GEUM"],"옥":["OK"],"육":["YUK"],"인":["IN"],"맹":["MAENG"],"제":["JE"],"모":["MO"],"탁":["TAK"],"국":["KOOK","GUK"],"어":["EO","UH"],"은":["EUN"],"편":["PYUN","PYEON"],"용":["YONG"],"예":["YE"],"경":["KYUNG","GYEONG"],"봉":["BONG"],"사":["SA"],"부":["BOO","BU"],"황보":["HWANGBO"],"남궁":["NAMGOONG","NAMGUNG"],"제갈":["JEGAL"],"선우":["SUNWOO"],"독고":["DOKGO"]};
 const KO_LBL=/대한|민국|여권|성명|국적|생년|월일|성별|발급|발행|관청|기간|만료|외교|종류|번호|주민|등록|한글|이름|서명|소지|일자|국가|코드|여행|증명|사진|관인/;
 const EN_LBL=new Set(["REPUBLIC","OF","KOREA","KOREAN","PASSPORT","TYPE","COUNTRY","CODE","NO","SURNAME","GIVEN","NAME","NAMES","NATIONALITY","DATE","BIRTH","SEX","ISSUE","EXPIRY","AUTHORITY","MINISTRY","FOREIGN","AFFAIRS","KOR","PM","PERSONAL","SIGNATURE","BEARER","THE","AND"]);
 const MONTHS=new Set(["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"]);
@@ -824,7 +827,9 @@ function camCalc(){
  const gw=Math.max(100,Math.min(ew*0.94,avH*PG.w/PG.h)),gh=gw*PG.h/PG.w,gx=(ew-gw)/2,gy=top+Math.max(0,(avH-gh)/2);
  return{s,ox,oy,gx,gy,gw,gh};
 }
-function camPlaceGuide(){if(!cam)return;cam.G=null;camDraw();const G=cam.G=camCalc(),g=$("camGuide").style;g.left=G.gx+"px";g.top=G.gy+"px";g.width=G.gw+"px";g.height=G.gh+"px";camDraw()}
+function camPlaceGuide(){if(!cam)return;cam.G=null;camDraw();const G=cam.G=camCalc(),g=$("camGuide").style;g.left=G.gx+"px";g.top=G.gy+"px";g.width=G.gw+"px";g.height=G.gh+"px";
+ const h=$("camHint");h.style.top=(G.gy-6)+"px";h.textContent=cam.img?"여권 사진을 축소/확대/이동하여 테두리 안에 넣으세요":"여권 사진면을 테두리 안에 맞추세요";
+ const o=$("camOv").style;o.top=(G.gy+G.gh+8)+"px";o.right=($("cam").clientWidth-G.gx-G.gw)+"px";camDraw()}
 async function camOpen(){
  cam={on:true,n:0,mrz:{},names:[],kos:{},best:null,last:null,fails:0};
  $("cam").classList.remove("hidden");$("camTop").textContent="카메라 준비 중...";$("camSum").innerHTML="";$("camLbl").innerHTML="";$("camSave").disabled=true;
@@ -1018,10 +1023,10 @@ function camDraw(){
  const me=cam;if(!me)return;const V=camVals(me),G=camGeom();
  // 상태 안내
  let msg,allOk=false;
- if(!V)msg=me.img?"한 손가락으로 사진을 옮기고, 두 손가락으로 벌려서 여권 사진면을 노란 테두리에 맞춰 주세요":me.n<2?"여권 사진면을 노란 테두리에 꽉 맞춰 주세요":"아래 영문·숫자 2줄이 아직 안 읽힙니다. 테두리에 맞추고, 빛 반사가 없게 각도를 조금씩 바꿔 보세요";
+ if(!V)msg=me.img?"테두리 안의 여권을 읽는 중입니다":me.n<2?"여권 사진면을 노란 테두리에 꽉 맞춰 주세요":"아래 영문·숫자 2줄이 아직 안 읽힙니다. 테두리에 맞추고, 빛 반사가 없게 각도를 조금씩 바꿔 보세요";
  else if(V.fb)msg="하단 코드가 안 읽혀서 각 칸을 따로 읽었습니다. 노란 값은 검증 안 된 값이니 여권과 비교하고 [확인] 후 입력란에서 고치세요";
  else{allOk=Object.values(V.f).every(x=>x[1]||(x===V.f.pKo&&V.p.nat!=="KOR"));
-  msg=allOk?(me.img?"✓ 모두 읽었습니다. 여권 글씨와 같으면 [확인]":"✓ 모두 읽었습니다. 여권 글씨와 같으면 [이 값으로 저장]"):!V.f.pKo[1]&&V.p.nat==="KOR"?"한글 이름 읽는 중... 한글 이름에 반사가 없게 해 주세요":"한 번 더 확인 중... 그대로 잠시 들고 계세요"}
+  msg=allOk?"✓ 여권 내용 확인 완료. 저장 전 정보를 확인하세요":!V.f.pKo[1]&&V.p.nat==="KOR"?"한글 이름 읽는 중... 한글 이름에 반사가 없게 해 주세요":"한 번 더 확인 중... 그대로 잠시 들고 계세요"}
  if(!me.ready)msg="인식 엔진 준비 중... (처음엔 30초 정도 걸릴 수 있음)";else if(!allOk&&me.n)msg+=` · ${me.n}번째 읽는 중`; // 계속 읽고 있다는 표시
  $("camTop").textContent=msg;$("camGuide").classList.toggle("ok",allOk);$("camSave").disabled=!V;
  // 아래 요약표
@@ -1037,12 +1042,16 @@ function camDraw(){
   if(V.fb){const fp=me.fbPos&&me.fbPos[k];if(!L||!fp||(k==="pSex"&&me.fbPos.pDob&&Math.abs(me.fbPos.pDob.p0.y-fp.p0.y)<2*L.geo.ppm))return""; // 각 칸 따로 읽은 경우: 실제 읽힌 줄 옆에 표시
    md=k==="pNo"||(k==="pKo"&&V.lay==="old")?"B":"L"}
   const fp=V.fb&&me.fbPos[k];
-  const q=fp?(md==="L"?pcS(fp.p0,-1.5,0):pcS(fp.pb,0,1.5)):md==="L"?pos(mx-1.5,mu):md==="R"?pos(mx+3,mu):pos(mx,mu-5),tf=md==="L"?"translate(-100%,-50%)":md==="R"?"translate(0,-50%)":"translate(0,0)";
+  const q=fp?(md==="L"?pcS(fp.p0,-4,0):pcS(fp.pb,0,1.5)):md==="L"?pos(mx-5,mu):md==="R"?pos(mx+3,mu):pos(mx,mu-5),tf=md==="L"?"translate(-100%,-50%)":md==="R"?"translate(0,-50%)":"translate(0,0)";
   return`<div class="cl${x[1]?" ok":""}" style="left:${q.x.toFixed(1)}px;top:${q.y.toFixed(1)}px;font-size:${fs.toFixed(1)}px;transform:${tf}">${esc(x[0])}</div>`}).join("");
 }
 window.addEventListener("resize",()=>cam&&camPlaceGuide());
 document.addEventListener("visibilitychange",()=>{if(document.hidden&&cam)camClose()});
 $("camClose").onclick=camClose;
+// 오버레이 켜기/끄기 (이 휴대폰에 기억)
+let ovOff=true;try{ovOff=localStorage.getItem("ovOff")!=="0"}catch(e){} // 기본은 꺼짐
+function ovApply(){$("camLbl").classList.toggle("off",ovOff);$("camOv").textContent=ovOff?"오버레이 켜기":"오버레이 끄기"}ovApply();
+$("camOv").onclick=()=>{ovOff=!ovOff;try{localStorage.setItem("ovOff",ovOff?"1":"0")}catch(e){}ovApply()};
 $("camReset").onclick=()=>{if(!cam)return;if(cam.best)freeC(cam.best.c);Object.assign(cam,{mrz:{},names:[],kos:{},best:null,last:null,fails:0,n:0,fb:null,fbOff:null});camDraw();$("camTop").textContent="처음부터 다시 읽습니다..."};
 $("camSave").onclick=async()=>{
  const me=cam;if(!me)return;const V=camVals(me),b=me.best;if(!V||!b)return;

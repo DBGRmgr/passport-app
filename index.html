@@ -399,7 +399,7 @@ $("fFile").onchange=async e=>{
  FIELDS.forEach(id=>{delete $(id).dataset.touched});
  $("pOcr").textContent="사진 처리 중...";
  const bmp=await createImageBitmap(f,{imageOrientation:"from-image"}).catch(()=>createImageBitmap(f));
- const sc=Math.min(1,1800/bmp.width);
+ const sc=Math.min(1,2400/Math.max(bmp.width,bmp.height));
  srcCanvas.width=Math.round(bmp.width*sc);srcCanvas.height=Math.round(bmp.height*sc);
  srcCanvas.getContext("2d").drawImage(bmp,0,0,srcCanvas.width,srcCanvas.height);
  hasPhoto=true;$("bShot").textContent="다시 촬영";
@@ -418,11 +418,17 @@ function layoutBox(){
  box.style.width=w+"px";box.style.height=h+"px";box.style.left=bx*W+"px";box.style.top=by*W+"px";
  updatePrev();
 }
+let faceFound=false;
 async function autoCrop(){
- bw=0.28;$("cropSize").value=28;bx=0.05;by=0.3*(srcCanvas.height/srcCanvas.width);
+ faceFound=false;bw=0.28;$("cropSize").value=28;bx=0.05;by=0.3*(srcCanvas.height/srcCanvas.width);
  if("FaceDetector" in window){try{const fs=await new FaceDetector({fastMode:true}).detect(srcCanvas);
   if(fs.length){const b=fs.sort((a,c)=>c.boundingBox.width-a.boundingBox.width)[0].boundingBox,W=srcCanvas.width;
-   const w=b.width*1.9;bw=Math.min(0.6,w/W);bx=(b.x+b.width/2-w/2)/W;by=(b.y+b.height/2-w*4/3/2)/W;$("cropSize").value=Math.round(bw*100)}}catch(e){}}
+   const w=b.width*1.9;bw=Math.min(0.6,w/W);bx=(b.x+b.width/2-w/2)/W;by=(b.y+b.height/2-w*4/3/2)/W;$("cropSize").value=Math.round(bw*100);faceFound=true}}catch(e){}}
+ requestAnimationFrame(layoutBox);
+}
+function geoCrop(){ // 하단 코드 위치로 여권 사진 위치 계산 (사진: 코드 왼쪽 끝 기준 가로 -2~35mm, 위로 14~63mm)
+ if(!mrzGeo)return;const g=mrzGeo,c=g.at(16.5,38.5),W=srcCanvas.width,w=37*g.ppm;
+ bw=Math.max(0.1,Math.min(0.6,w/W));bx=(c.x-w/2)/W;by=(c.y-w*2/3)/W;$("cropSize").value=Math.round(bw*100);
  requestAnimationFrame(layoutBox);
 }
 $("cropSize").oninput=()=>{bw=$("cropSize").value/100;layoutBox()};
@@ -474,13 +480,26 @@ function parseMRZ(txt){
   if(ok&&code)break;
  }
  let no=raw2.slice(0,9);const chk=+toNum(raw2[9]||"x");
- let okNo=cd(no)===chk;if(!okNo){const f=fixPassNo(no,chk);if(f){no=f;okNo=true}}
+ let okNo=cd(no)===chk;if(!okNo||!/^[A-Z]\d{3}[A-Z]\d{4}$|^[A-Z]\d{8}$/.test(no)){const f=fixPassNo(no,chk);if(f){no=f;okNo=true}} // 검증번호가 우연히 맞는 오인식도 형식으로 한 번 더 확인
  const dobS=al.dS,okDob=al.ok,nat=al.code||normNat(l1.slice(2,5));
  let sex=al.rest[7];sex=sex==="M"||sex==="F"?sex:"";
  const yy=+dobS.slice(0,2),cy=new Date().getFullYear()%100;
  const dob=/^\d{6}$/.test(dobS)?`${(yy>cy?1900:2000)+yy}-${dobS.slice(2,4)}-${dobS.slice(4,6)}`:"";
- const sur=(l1.slice(5).match(/^[A-Z]+/)||[""])[0];
- return{no:no.replace(/</g,""),sex,dob,okNo,okDob,sur,nat};
+ const rest=al.rest,expS=toNum(rest.slice(8,14)),okExp=/^\d{6}$/.test(expS)&&cd(expS)===+toNum(rest[14]||"x");
+ let okComp=false;if(rest.length>=31){const cs=no+chk+dobS+rest[6]+expS+rest[14]+rest.slice(15,29)+rest[29];okComp=cd(cs)===+toNum(rest[30])}
+ const l1a=l1.replace(/[0-9]/g,c=>({"0":"O","1":"I","2":"Z","5":"S","8":"B","6":"G","4":"A"}[c]||"<")),ki=l1a.slice(0,8).indexOf("KOR"),nm=mrzName(l1a.slice(ki>=1?ki+3:5)),sur=nm.sur; // 앞에 글자가 끼어든 경우 대비
+ const score=(okNo?2:0)+(okDob?1:0)+(okExp?1:0)+(okComp?1:0)+(l1[0]==="P"?1:0);
+ return{no:no.replace(/</g,""),sex,dob,okNo,okDob,okExp,okComp,sur,nat,en:nm.en,okName:nm.ok,score};
+}
+function mrzName(f){ // MRZ 1번째 줄 이름: 성<<이름<이름<<<<
+ f=f.replace(/[^A-Z<]/g,"");
+ // 채움 문자 '<'가 C/L/K/E 로 잘못 읽힌 것 되돌리기: 로마자 이름에서 C는 항상 CH, '<' 사이에 낀 L/K/E/C 는 '<'
+ f=f.replace(/C(?!H)/g,"<");for(let i=0;i<3;i++)f=f.replace(/<[LKEC]+(?=<|$)/g,m=>"<".repeat(m.length)).replace(/[LKE]{5,}(?=<|$)/g,m=>"<".repeat(m.length));
+ let sur=(f.match(/^[A-Z]+/)||[""])[0],giv=f.slice(sur.length).replace(/^<+/,"");
+ if(!ALL_ROMS.has(sur)){for(const r of ALL_ROMS){const q=sur.slice(r.length);if(sur.startsWith(r)&&/^[KC]{2}/.test(q)){giv=q.slice(2)+(giv?"<"+giv:"");sur=r;break}}} // '<<'가 KK로 읽힌 경우
+ giv=giv.split(/<{3,}/)[0].split("<").filter(w=>w&&romOK(w));
+ const en=[sur,...giv].filter(Boolean).join(" ");
+ return{sur:sur.split(" ")[0],en,ok:!!sur&&giv.length>0&&/^[A-Z ]+$/.test(en)&&en.replace(/ /g,"").length<=39};
 }
 const SURN={"김":["KIM","GIM"],"이":["LEE","YI","RHEE","RHIE","I"],"박":["PARK","BAK","PAK"],"최":["CHOI","CHOE"],"정":["JUNG","JEONG","CHUNG","CHEONG"],"강":["KANG","GANG"],"조":["CHO","JO","JOH"],"윤":["YOON","YUN"],"장":["JANG","CHANG"],"임":["LIM","IM","YIM"],"한":["HAN"],"오":["OH","O"],"서":["SEO","SUH"],"신":["SHIN","SIN"],"권":["KWON","GWON"],"황":["HWANG"],"안":["AHN","AN"],"송":["SONG"],"류":["RYU","YOO","YU"],"유":["YOO","YU","RYU"],"전":["JEON","JUN","CHUN"],"홍":["HONG"],"고":["KO","GO","KOH"],"문":["MOON","MUN"],"양":["YANG"],"손":["SON","SOHN"],"배":["BAE","BAI"],"백":["BAEK","BACK","PAIK"],"허":["HEO","HUH","HUR"],"남":["NAM"],"심":["SIM","SHIM"],"노":["NOH","NO","RO","ROH"],"하":["HA"],"곽":["KWAK","GWAK"],"성":["SUNG","SEONG"],"차":["CHA"],"주":["JOO","JU","CHOO"],"우":["WOO","U"],"구":["KOO","KU","GU"],"민":["MIN"],"진":["JIN","CHIN"],"나":["NA","RA"],"지":["JI","CHI"],"엄":["UM","EOM"],"채":["CHAE"],"원":["WON"],"천":["CHUN","CHEON"],"방":["BANG"],"공":["KONG","GONG"],"현":["HYUN","HYEON"],"함":["HAM"],"변":["BYUN","BYEON"],"염":["YEOM","YUM"],"여":["YEO","YUH"],"추":["CHU","CHOO"],"도":["DO","DOH"],"소":["SO"],"석":["SEOK","SUK"],"선":["SUN","SEON"],"설":["SEOL","SUL"],"마":["MA"],"길":["GIL","KIL"],"연":["YEON","YUN"],"위":["WI","WEE"],"표":["PYO"],"명":["MYUNG","MYEONG"],"기":["KI","GI"],"반":["BAN"],"왕":["WANG"],"금":["KEUM","GEUM"],"옥":["OK"],"육":["YUK"],"인":["IN"],"맹":["MAENG"],"제":["JE"],"모":["MO"],"탁":["TAK"],"국":["KOOK","GUK"],"어":["EO","UH"],"은":["EUN"],"편":["PYUN","PYEON"],"용":["YONG"],"예":["YE"],"경":["KYUNG","GYEONG"],"봉":["BONG"],"사":["SA"],"부":["BOO","BU"],"황보":["HWANGBO"],"남궁":["NAMGOONG","NAMGUNG"],"제갈":["JEGAL"],"선우":["SUNWOO"],"독고":["DOKGO"]};
 const KO_LBL=/대한|민국|여권|성명|국적|생년|월일|성별|발급|발행|관청|기간|만료|외교|종류|번호|주민|등록|한글|이름|서명|소지|일자|국가|코드|여행|증명|사진|관인/;
@@ -524,13 +543,143 @@ function parseNames(txt,mrzSur){
  if(si>=0){for(let i=si+1;i<=si+3&&i<lines.length;i++){const t=upTokens(lines[i]).filter(w=>w!==sur);if(t.length){giv=t.slice(0,3).join(" ");break}}}
  return{ko,en:[sur,giv].filter(Boolean).join(" ")};
 }
-let mrzWorker=null,korWorker=null;
-async function getMrz(){if(!mrzWorker){mrzWorker=await Tesseract.createWorker("eng");await mrzWorker.setParameters({tessedit_char_whitelist:"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<",tessedit_pageseg_mode:"6"})}return mrzWorker}
-async function getKor(){if(!korWorker){korWorker=await Tesseract.createWorker(["kor","eng"]);await korWorker.setParameters({tessedit_pageseg_mode:"6"})}return korWorker}
-function region(y0,y1,maxW,filter){
- const W=srcCanvas.width,H=srcCanvas.height,sy=Math.round(H*y0),sh=Math.round(H*(y1-y0));
+let mrzWorker=null,korWorker=null,mrzGeo=null;
+const MRZ_LANG="https://cdn.jsdelivr.net/gh/DoubangoTelecom/tesseractMRZ@1e7adfecda5f3c9ae1fb12cf6b4b8c3958c63e46/tessdata_fast"; // 여권 하단 코드 전용 글꼴 학습 데이터(1.4MB, BSD)
+async function getMrz(){if(!mrzWorker){mrzWorker=await Tesseract.createWorker("mrz",1,{langPath:MRZ_LANG,gzip:false}).catch(()=>Tesseract.createWorker("eng"));await mrzWorker.setParameters({tessedit_char_whitelist:"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<",tessedit_pageseg_mode:"6"})}return mrzWorker}
+async function getKor(){if(!korWorker){korWorker=await Tesseract.createWorker(["kor","eng"]);await korWorker.setParameters({tessedit_pageseg_mode:"11"})}return korWorker}
+function region(y0,y1,maxW,filter,src){
+ src=src||srcCanvas;const W=src.width,H=src.height,sy=Math.round(H*y0),sh=Math.round(H*(y1-y0));
  const sc=Math.min(2,maxW/W),c=document.createElement("canvas");c.width=Math.round(W*sc);c.height=Math.round(sh*sc);
- const g=c.getContext("2d");g.filter=filter;g.drawImage(srcCanvas,0,sy,W,sh,0,0,c.width,c.height);return c;
+ const g=c.getContext("2d");g.filter=filter;g.drawImage(src,0,sy,W,sh,0,0,c.width,c.height);return{c,sc,sy};
+}
+/* --- 이미지 도구 --- */
+function rotCanvas(src,deg){ // 90/180/270도 회전
+ const c=document.createElement("canvas"),s=deg%180!==0;c.width=s?src.height:src.width;c.height=s?src.width:src.height;
+ const g=c.getContext("2d");g.translate(c.width/2,c.height/2);g.rotate(deg*Math.PI/180);g.drawImage(src,-src.width/2,-src.height/2);return c;
+}
+function cropRot(src,cx,cy,w,h,ang,sc,filter){ // (cx,cy) 중심, ang 기울기만큼 바로 세워서 잘라내기
+ const c=document.createElement("canvas");c.width=Math.max(1,Math.round(w*sc));c.height=Math.max(1,Math.round(h*sc));
+ const g=c.getContext("2d");g.fillStyle="#fff";g.fillRect(0,0,c.width,c.height);if(filter)g.filter=filter;
+ g.translate(c.width/2,c.height/2);g.scale(sc,sc);g.rotate(-ang);g.translate(-cx,-cy);g.drawImage(src,0,0);return c;
+}
+function binarize(c,win,k){ // 빛 반사·그늘에 강한 지역 평균 이진화
+ const W=c.width,H=c.height,g=c.getContext("2d"),im=g.getImageData(0,0,W,H),d=im.data,gr=new Float32Array(W*H),I=new Float64Array((W+1)*(H+1));
+ for(let i=0;i<W*H;i++)gr[i]=d[i*4]*0.3+d[i*4+1]*0.59+d[i*4+2]*0.11;
+ for(let y=0;y<H;y++){let s=0;for(let x=0;x<W;x++){s+=gr[y*W+x];I[(y+1)*(W+1)+x+1]=I[y*(W+1)+x+1]+s}}
+ const r=Math.max(4,Math.round(win/2));
+ for(let y=0;y<H;y++){const y0=Math.max(0,y-r),y1=Math.min(H,y+r+1);for(let x=0;x<W;x++){const x0=Math.max(0,x-r),x1=Math.min(W,x+r+1);
+  const m=(I[y1*(W+1)+x1]-I[y0*(W+1)+x1]-I[y1*(W+1)+x0]+I[y0*(W+1)+x0])/((x1-x0)*(y1-y0));const v=gr[y*W+x]<m*(1-k)?0:255;
+  d[(y*W+x)*4]=d[(y*W+x)*4+1]=d[(y*W+x)*4+2]=v;d[(y*W+x)*4+3]=255}}
+ g.putImageData(im,0,0);return c;
+}
+function stretch(c,pad){ // 밝기 자동 보정(대비 늘리기) + 흰 여백
+ const W=c.width,H=c.height,g=c.getContext("2d"),im=g.getImageData(0,0,W,H),d=im.data,h=new Array(256).fill(0);
+ for(let i=0;i<d.length;i+=4){d[i]=Math.round(d[i]*0.3+d[i+1]*0.59+d[i+2]*0.11);h[d[i]]++} // 아이폰은 canvas filter 미지원일 수 있어 직접 흑백 변환
+ let lo=0,hi=255,n=0,N=W*H;
+ while(lo<255&&(n+=h[lo])<N*0.02)lo++;n=0;while(hi>0&&(n+=h[hi])<N*0.4)hi--;if(hi<=lo+10){lo=0;hi=255}
+ for(let i=0;i<d.length;i+=4){const v=Math.max(0,Math.min(255,(d[i]-lo)*255/(hi-lo)));d[i]=d[i+1]=d[i+2]=v}g.putImageData(im,0,0);
+ const o=document.createElement("canvas");o.width=W+pad*2;o.height=H+pad*2;const q=o.getContext("2d");q.fillStyle="#fff";q.fillRect(0,0,o.width,o.height);q.drawImage(c,pad,pad);return o;
+}
+function skewOf(src){ // 사진 기울기 추정 (글자 줄이 가장 또렷하게 겹치는 각도, -15~15도)
+ const sc=Math.min(1,700/src.width),c=document.createElement("canvas");c.width=Math.round(src.width*sc);c.height=Math.round(src.height*sc);
+ c.getContext("2d").drawImage(src,0,0,c.width,c.height);binarize(c,25,0.15);
+ const d=c.getContext("2d").getImageData(0,0,c.width,c.height).data,P=[];
+ for(let y=0;y<c.height;y+=1)for(let x=0;x<c.width;x+=2)if(d[(y*c.width+x)*4]===0)P.push(x,y);
+ if(P.length<200)return 0;let best=0,bs=-1;
+ for(let a=-15;a<=15;a+=0.5){const r=a*Math.PI/180,cs=Math.cos(r),sn=Math.sin(r),H=new Map();
+  for(let i=0;i<P.length;i+=2){const k=Math.round(P[i+1]*cs-P[i]*sn);H.set(k,(H.get(k)||0)+1)}
+  let sq=0;for(const v of H.values())sq+=v*v;if(sq>bs){bs=sq;best=a}}
+ return best;
+}
+function rotFree(src,deg){ // 임의 각도 회전 (흰 바탕 아닌 주변색 유지)
+ const r=deg*Math.PI/180,W=src.width,H=src.height,c=document.createElement("canvas");c.width=W;c.height=H;
+ const g=c.getContext("2d");g.fillStyle="#888";g.fillRect(0,0,W,H);g.translate(W/2,H/2);g.rotate(r);g.drawImage(src,-W/2,-H/2);return c;
+}
+function tLines(data){const out=[];(data.blocks||[]).forEach(b=>(b.paragraphs||[]).forEach(p=>(p.lines||[]).forEach(l=>out.push(l))));return out}
+/* --- MRZ(하단 2줄 코드) --- */
+const mrzClean=s=>String(s||"").toUpperCase().replace(/[«‹(\[{]/g,"<").replace(/[^A-Z0-9<]/g,"");
+function mrzPick(lines){ // OCR 줄 목록에서 MRZ 2줄로 가장 그럴듯한 쌍 고르기
+ let best=null;
+ for(let i=0;i+1<lines.length;i++){const a=mrzClean(lines[i].text),b=mrzClean(lines[i+1].text);
+  if(a.length<30||b.length<30)continue;const p=parseMRZ(a+"\n"+b);if(!p)continue;
+  if(!best||p.score>best.p.score)best={p,i}}
+ return best;
+}
+function lineGeo(l,sc,sy){ // tesseract 줄 좌표 → 원본 좌표 (중심, 기울기, 길이)
+ const b=l.bbox,bl=l.baseline||{};let ang=0;if(bl.x1>bl.x0+10)ang=Math.atan2(bl.y1-bl.y0,bl.x1-bl.x0);
+ return{cx:(b.x0+b.x1)/2/sc,cy:(b.y0+b.y1)/2/sc+sy,w:(b.x1-b.x0)/sc,h:(b.y1-b.y0)/sc,ang};
+}
+async function readMRZ(src,say){
+ const w=await getMrz();let best=null;
+ for(const frac of [0.55,0.35]){ // 1단계: 하단에서 MRZ 줄 위치 찾기
+  const R=region(1-frac,1,2400,"grayscale(1) contrast(1.6)",src);
+  const r=await w.recognize(R.c,{},{blocks:true,text:true});
+  const pk=mrzPick(tLines(r.data));
+  if(pk&&(!best||pk.p.score>best.p.score)){const ls=tLines(r.data);best={p:pk.p,g1:lineGeo(ls[pk.i],R.sc,R.sy),g2:lineGeo(ls[pk.i+1],R.sc,R.sy)}}
+  if(best&&best.p.score>=6)break;
+ }
+ if(!best)return null;
+ // 2단계: MRZ 두 줄만 바르게 세우고 크게 확대해서 다시 읽기 (점수가 만점이 아닐 때)
+ const g1=best.g1,g2=best.g2,ang=Math.abs(g2.ang)<0.35?g2.ang:0;
+ const d=Math.max(Math.hypot(g2.cx-g1.cx,g2.cy-g1.cy),g2.h*1.5),len=Math.max(g1.w,g2.w)/Math.cos(ang);
+ const cx=(g1.cx+g2.cx)/2,cy=(g1.cy+g2.cy)/2,sc=Math.min(4,90/d);
+ const names=[];const addName=p=>{if(p&&p.okName&&p.score>=3)names.push(p.en)};addName(best.p);
+ // 이름 칸에는 검증번호가 없으므로 항상 여러 방식으로 다시 읽어 다수결로 정함
+ const vars=[c=>c,c=>binarize(c,d*sc*0.9,0.12),c=>binarize(c,d*sc*0.9,0.06)];
+ for(let k=0;k<vars.length;k++){
+  const c=vars[k](cropRot(src,cx,cy,len*1.08,d*2.3,ang,sc,"grayscale(1) contrast(1.4)"));
+  const r=await w.recognize(c);const ls=r.data.text.split(/\n/).map(mrzClean).filter(s=>s.length>=30);
+  for(let i=0;i+1<ls.length;i++){const p=parseMRZ(ls[i]+"\n"+ls[i+1]);if(!p)continue;addName(p);if(p.score>best.p.score)best.p=p}
+  if(k>=1&&best.p.score>=6&&names.length>=3)break;
+ }
+ // 여권 면 위치 계산 (MRZ 2번째 줄 왼쪽 끝 기준, mm 단위). MRZ 한 줄 = 44글자 ≈ 110mm
+ const ppm=len/110,u={x:Math.cos(ang),y:Math.sin(ang)},v={x:-Math.sin(ang),y:Math.cos(ang)};
+ const L={x:g2.cx-u.x*len/2,y:g2.cy-u.y*len/2};
+ const at=(mmX,mmUp)=>({x:L.x+u.x*mmX*ppm-v.x*mmUp*ppm,y:L.y+u.y*mmX*ppm-v.y*mmUp*ppm});
+ return{p:best.p,names,geo:{ppm,ang,at}};
+}
+/* --- 한글 이름 ↔ 영문 이름(로마자) 대조 --- */
+const RO_I=[["G","K"],["KK","GG"],["N"],["D","T"],["TT","DD"],["R","L"],["M"],["B","P"],["PP","BB"],["S","SH"],["SS"],[""],["J","CH"],["JJ"],["CH"],["K"],["T"],["P"],["H"]];
+const RO_V=[["A"],["AE"],["YA"],["YAE"],["EO","U","O"],["E"],["YEO","YOU","YU","YE"],["YE"],["O","OH"],["WA"],["WAE"],["OE","WE"],["YO"],["U","OO","WOO","WU"],["WO"],["WE"],["WI"],["YU","YOO"],["EU","U"],["UI","EUI","EE","I"],["I","EE","Y"]];
+const RO_F=[[""],["K","G"],["K"],["K"],["N"],["N"],["N"],["T","D"],["L"],["K"],["M"],["L"],["L"],["L"],["P"],["L"],["M"],["P","B"],["P"],["T","S"],["T"],["NG"],["T"],["T"],["K"],["T"],["P"],["T"]];
+function syRoms(ch){
+ const k=ch.charCodeAt(0)-0xAC00;if(k<0||k>11171)return[];
+ const i=Math.floor(k/588),v=Math.floor(k%588/28),f=k%28,o=[];
+ for(const a of RO_I[i])for(const b of RO_V[v])for(const c of RO_F[f])o.push(a+b+c);return o;
+}
+let ROMSET=null;
+function romOK(w){ // 한국어 음절 로마자들의 조합으로 쓸 수 있는 단어인지 (잡음 글자 거르기)
+ if(!ROMSET){ROMSET=new Set();for(let k=0;k<11172;k++)syRoms(String.fromCharCode(0xAC00+k)).forEach(r=>r&&ROMSET.add(r));Object.values(SURN).flat().forEach(r=>ROMSET.add(r))}
+ const ok=[true];for(let i=1;i<=w.length;i++){ok[i]=false;for(let j=Math.max(0,i-7);j<i;j++)if(ok[j]&&ROMSET.has(w.slice(j,i))){ok[i]=true;break}}return ok[w.length];
+}
+function romMatch(ko,en){ // 한글 이름이 영문 이름(공백 무시)과 소리상 일치하면 true
+ en=String(en||"").replace(/[^A-Z]/g,"");if(!ko||!en||!/^[가-힣]+$/.test(ko))return false;
+ const ch=[...ko],tries=[];
+ if(ch.length>=3&&SURN[ch[0]+ch[1]])tries.push([SURN[ch[0]+ch[1]],...ch.slice(2).map(syRoms)]);
+ tries.push([[...(SURN[ch[0]]||[]),...syRoms(ch[0])],...ch.slice(1).map(syRoms)]);
+ return tries.some(opts=>{const memo=new Map();const go=(i,p)=>{if(i===opts.length)return p===en.length;const key=i*100+p;if(memo.has(key))return memo.get(key);
+  let ok=false;for(const r of opts[i])if(en.startsWith(r,p)&&go(i+1,p+r.length)){ok=true;break}memo.set(key,ok);return ok};return go(0,0)});
+}
+function pickName(names,ko){ // 여러 번 읽은 영문 이름 중: 한글 이름과 소리가 맞는 것 > 많이 나온 것 > 성이 흔한 성인 것
+ const cnt={};names.forEach(n=>cnt[n]=(cnt[n]||0)+1);
+ const sc=n=>(ko&&romMatch(ko,n)?100:0)+cnt[n]*10+(ALL_ROMS.has(n.split(" ")[0])?5:0)+(n.split(" ").every(romOK)?2:0);
+ return Object.keys(cnt).sort((a,b)=>sc(b)-sc(a))[0]||"";
+}
+function pickKo(txt,enName,sur){ // OCR 글자 중 한글 이름 고르기
+ const lines=txt.split(/\n/).map(s=>s.trim()).filter(Boolean);let ko="",bs=-99;
+ for(let li=0;li<lines.length;li++){const l=lines[li];
+  const cands=(l.match(/[가-힣]{2,5}/g)||[]).map(c=>[c,0]);
+  if(/한\s*글\s*성\s*명|한\s*글\s*이\s*름/.test(l)||(li>0&&/한\s*글\s*성\s*명/.test(lines[li-1])))cands.forEach(c=>c[1]+=3);
+  for(let [c,s] of cands){
+   if(KO_LBL.test(c))continue;
+   if((Array.isArray(enName)?enName:[enName]).some(e=>romMatch(c,e)))s+=20;
+   else{const sk=SURN[c.slice(0,2)]&&c.length>=3?c.slice(0,2):c[0],roms=SURN[sk];
+    if(roms){s+=2;if(sur&&roms.includes(sur))s+=5}}
+   if(c.length===3)s+=2;else if(c.length===2||c.length===4)s+=1;
+   if(s>bs){bs=s;ko=c}
+  }
+ }
+ return bs>=6?ko:"";
 }
 async function runOCR(tok){
  if(!window.Tesseract){$("pOcr").textContent="자동 인식 엔진을 불러오지 못했습니다(인터넷 필요). 빨간 칸을 직접 입력해 주세요.";lockAll();return}
@@ -538,29 +687,64 @@ async function runOCR(tok){
 }
 async function runOCR2(tok){
  const msg=[];const say=()=>{if(tok===ocrToken)$("pOcr").innerHTML=msg.join("<br>")};
- let mrz=null;
+ let mrz=null,M=null,txt="",mrzNames=[];mrzGeo=null;
  try{
   msg[0]="① 여권 하단 코드 읽는 중...";say();
-  const w=await getMrz();
-  for(const frac of [0.3,0.4,0.5]){
-   const r=await w.recognize(region(1-frac,1,2000,"grayscale(1) contrast(1.6)"));
-   const p=parseMRZ(r.data.text);if(p&&(!mrz||p.okNo))mrz=p;if(mrz&&mrz.okNo)break;
+  const orig=rotFree(srcCanvas,0),prep=c=>{const sk=skewOf(c);return Math.abs(sk)>=1?rotFree(c,-sk):c}; // 기울게 찍힌 사진은 먼저 바르게 돌리기
+  let c0=prep(orig);M=await readMRZ(c0);if(M)M.rot=c0;
+  if(!M||M.p.score<4){ // 여권을 옆으로/거꾸로 찍은 경우
+   for(const deg of [90,270,180]){if(tok!==ocrToken)return;
+    msg[0]="① 사진 방향을 바꿔서 다시 읽는 중...";say();
+    const rc=prep(rotCanvas(orig,deg)),m2=await readMRZ(rc);
+    if(m2&&(!M||m2.p.score>M.p.score)){M=m2;M.rot=rc}
+    if(M&&M.p.score>=4)break;
+   }
   }
   if(tok!==ocrToken)return;
-  if(mrz){autoSet("pNo",mrz.no);autoSet("pSex",mrz.sex);autoSet("pDob",mrz.dob);autoSet("pNat",mrz.nat);["pNat","pNo","pSex","pDob"].forEach(id=>setLock(id,true));
-   msg[0]=mrz.okNo?'<span class="ok">① 국적·여권번호·성별·생년월일 인식 완료</span>':'<span class="err">① 여권번호 검증 실패, 꼭 확인하세요</span>';
+  if(!M)M={p:{score:0},rot:c0};
+  if(M.rot!==orig){srcCanvas.width=M.rot.width;srcCanvas.height=M.rot.height;srcCanvas.getContext("2d").drawImage(M.rot,0,0);faceFound=false;requestAnimationFrame(layoutBox)} // 바르게 돌린 사진으로 교체
+  if(tok!==ocrToken)return;
+  if(M.p.score>=3){mrz=M.p;mrzGeo=M.geo;
+   autoSet("pNo",mrz.no);autoSet("pSex",mrz.sex);autoSet("pDob",mrz.dob);autoSet("pNat",mrz.nat);
+   mrzNames=M.names||[];if(mrz.okName&&!mrzNames.length)mrzNames=[mrz.en];if(mrzNames.length)autoSet("pEn",pickName(mrzNames,""));
+   ["pNat","pNo","pSex","pDob","pEn"].forEach(id=>setLock(id,true));
+   msg[0]=mrz.okNo?'<span class="ok">① 국적·여권번호·성별·생년월일·영문이름 인식 완료</span>':'<span class="err">① 여권번호 검증 실패, 꼭 확인하세요</span>';
    $("pCheck").textContent=mrz.okDob?"":"생년월일 검증 실패 가능성 있음, 확인하세요.";
-  }else msg[0]='<span class="err">① 하단 코드를 읽지 못했습니다. 다시 촬영하거나 직접 입력하세요.</span>';
+   if(!faceFound)geoCrop();
+  }else{mrz=null;msg[0]='<span class="err">① 하단 코드를 읽지 못했습니다. 여권 사진면을 화면 가득, 반사 없이 다시 찍어 주세요.</span>'}
  }catch(e){msg[0]="① 코드 인식 실패. 직접 입력하세요."}
  say();
  try{
-  msg[1]="② 한글·영문 이름 읽는 중... (처음엔 30초 이상 걸릴 수 있음)";say();
+  msg[1]="② 한글 이름 읽는 중... (처음엔 30초 이상 걸릴 수 있음)";say();
   const w=await getKor();
-  const r=await w.recognize(region(0,0.8,1600,"grayscale(1) contrast(1.4)"));
+  if(mrzGeo){ // 한글성명 자리만 바르게 세워 크게 확대해서 읽기 (신여권: 이름 아래, 구여권: 오른쪽 아래)
+   const g=mrzGeo,en=mrzNames,sur=mrz&&mrz.sur;let ko="",best=-1;
+   const zone=(x0,x1,u0,u1,ppm)=>{const a=g.at(x0,u0),b=g.at(x1,u1),sc=Math.min(5,ppm/g.ppm);
+    return stretch(cropRot(srcCanvas,(a.x+b.x)/2,(a.y+b.y)/2,(x1-x0)*g.ppm,(u1-u0)*g.ppm,g.ang,sc,"grayscale(1)"),16)};
+   const tryTxt=t=>{txt+="\n"+t;const k=pickKo(t,en,sur);if(!k)return;const s=en.some(e=>romMatch(k,e))?2:1;if(s>best){best=s;ko=k}};
+   // 같은 자리를 크기·읽기 방식을 바꿔 여러 번 읽고, 영문 이름과 소리가 맞는 결과가 나오면 바로 채택
+   outer:for(const z of [[33,60,32,40],[71,98,17,26]])for(const ppm of [12,17,8,24])for(const psm of ["7","13"]){
+    await w.setParameters({tessedit_pageseg_mode:psm});
+    const c=zone(...z,ppm),t=(await w.recognize(c)).data.text;if(tok!==ocrToken)return;tryTxt(t);
+    if(best===2)break outer;
+   }
+   if(best<2){ // 못 찾으면 사진면 전체(사진 오른쪽)에서 찾기
+    await w.setParameters({tessedit_pageseg_mode:"11"});
+    const a=g.at(30,12),b=g.at(120,74),sc=Math.min(3,12/g.ppm);
+    const c=cropRot(srcCanvas,(a.x+b.x)/2,(a.y+b.y)/2,90*g.ppm,62*g.ppm,g.ang,sc,"grayscale(1) contrast(1.3)");
+    const t=(await w.recognize(c)).data.text;if(tok!==ocrToken)return;tryTxt(t);
+   }
+   autoSet("pKo",ko);if(ko&&mrzNames.length)autoSet("pEn",pickName(mrzNames,ko));
+  }else{
+   await w.setParameters({tessedit_pageseg_mode:"11"});
+   const R=region(0,0.8,1600,"grayscale(1) contrast(1.4)");
+   txt=(await w.recognize(R.c)).data.text;if(tok!==ocrToken)return;
+  }
   if(tok!==ocrToken)return;
-  const n=parseNames(r.data.text,mrz&&mrz.sur);
-  autoSet("pKo",n.ko);autoSet("pEn",n.en);setLock("pKo",true);setLock("pEn",true);
-  msg[1]=(n.ko&&n.en)?'<span class="ok">② 이름 인식 완료. 확인하세요.</span>':'<span class="err">② 이름 일부를 못 읽었습니다. 빨간 칸을 직접 입력하세요.</span>';
+  if(!$("pKo").value||!$("pEn").value){const n=parseNames(txt,mrz&&mrz.sur);if(!$("pKo").value&&!mrzGeo)autoSet("pKo",n.ko);if(!$("pEn").value)autoSet("pEn",n.en)}
+  setLock("pKo",true);setLock("pEn",true);
+  const ko=$("pKo").value,en=$("pEn").value,mt=romMatch(ko,en);
+  msg[1]=(ko&&en)?(mt?'<span class="ok">② 한글 이름 인식 완료 (영문 이름과 일치)</span>':'<span class="err">② 한글 이름이 영문 이름과 맞지 않을 수 있습니다. 꼭 확인하세요.</span>'):'<span class="err">② 이름 일부를 못 읽었습니다. 빨간 칸을 직접 입력하세요.</span>';
  }catch(e){msg[1]="② 이름 인식 실패. 직접 입력하세요."}
  say();
 }

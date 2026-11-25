@@ -517,7 +517,7 @@ function parseMRZ(txt){
  const dob=/^\d{6}$/.test(dobS)?`${(yy>cy?1900:2000)+yy}-${dobS.slice(2,4)}-${dobS.slice(4,6)}`:"";
  const rest=al.rest,expS=toNum(rest.slice(8,14)),okExp=/^\d{6}$/.test(expS)&&cd(expS)===+toNum(rest[14]||"x");
  let okComp=false;if(rest.length>=31){const cs=no+chk+dobS+rest[6]+expS+rest[14]+rest.slice(15,29)+rest[29];okComp=cd(cs)===+toNum(rest[30])}
- const l1a=l1.replace(/[0-9]/g,c=>({"0":"O","1":"I","2":"Z","5":"S","8":"B","6":"G","4":"A"}[c]||"<")),ki=l1a.slice(0,8).indexOf("KOR"),nm=mrzName(l1a.slice(ki>=1?ki+3:5)),sur=nm.sur; // 앞에 글자가 끼어든 경우 대비
+ const l1a=l1.replace(/[0-9]/g,c=>({"0":"O","1":"I","2":"Z","5":"S","8":"B","6":"G","4":"A"}[c]||"<")),ki=l1a.slice(0,8).indexOf("KOR"),nm=mrzName(l1a.slice(ki>=0?ki+3:5)),sur=nm.sur; // 앞에 글자가 끼어든 경우 대비
  const score=(okNo?2:0)+(okDob?1:0)+(okExp?1:0)+(okComp?1:0)+(l1[0]==="P"?1:0)-(nat==="KOR"&&!/^[A-Z]\d{3}[A-Z]\d{4}$|^[A-Z]\d{8}$/.test(no.replace(/</g,""))?2:0); // 한국 여권번호 형식이 아니면 감점
  return{no:no.replace(/</g,""),sex,dob,okNo,okDob,okExp,okComp,sur,nat,en:nm.en,okName:nm.ok,score};
 }
@@ -527,7 +527,7 @@ function mrzName(f){ // MRZ 1번째 줄 이름: 성<<이름<이름<<<<
  f=f.replace(/C(?!H)/g,"<");for(let i=0;i<3;i++)f=f.replace(/<[LKEC]+(?=<|$)/g,m=>(m.length<=4&&romOK(m.slice(1)))?m:"<".repeat(m.length)).replace(/[LKE]{5,}(?=<|$)/g,m=>"<".repeat(m.length));
  let sur=(f.match(/^[A-Z]+/)||[""])[0],giv=f.slice(sur.length).replace(/^<+/,"");
  if(!ALL_ROMS.has(sur)){for(const r of ALL_ROMS){const q=sur.slice(r.length);if(sur.startsWith(r)&&/^[KC]{2}/.test(q)){giv=q.slice(2)+(giv?"<"+giv:"");sur=r;break}}} // '<<'가 KK로 읽힌 경우
- giv=giv.split(/<{3,}/)[0].split("<").filter(w=>w&&romOK(w));
+ giv=giv.split(/<{3,}/)[0].split("<").map(fixRom).filter(w=>w&&romOK(w));
  const en=[sur,...giv].filter(Boolean).join(" ");
  return{sur:sur.split(" ")[0],en,ok:!!sur&&giv.length>0&&/^[A-Z ]+$/.test(en)&&en.replace(/ /g,"").length<=39};
 }
@@ -687,6 +687,10 @@ function syRoms(ch){
  return o;
 }
 let ROMSET=null;
+function fixRom(w){ // 로마자로 안 되는 이름 조각은 비슷한 글자 하나를 바꿔 봄 (예: YOUNGSTK→YOUNGSIK)
+ if(!w||romOK(w))return w;const SIM={T:"I",L:"I",J:"I",F:"E",Q:"O",D:"O",V:"Y",X:"K",Z:"S",R:"N",M:"N",N:"M",I:"L"};
+ for(let i=0;i<w.length;i++){const r=SIM[w[i]];if(r){const t=w.slice(0,i)+r+w.slice(i+1);if(romOK(t))return t}}return w;
+}
 function romOK(w){ // 한국어 음절 로마자들의 조합으로 쓸 수 있는 단어인지 (잡음 글자 거르기)
  if(!ROMSET){ROMSET=new Set();for(let k=0;k<11172;k++)syRoms(String.fromCharCode(0xAC00+k)).forEach(r=>r&&ROMSET.add(r));Object.values(SURN).flat().forEach(r=>ROMSET.add(r))}
  const ok=[true];for(let i=1;i<=w.length;i++){ok[i]=false;for(let j=Math.max(0,i-7);j<i;j++)if(ok[j]&&ROMSET.has(w.slice(j,i))){ok[i]=true;break}}return ok[w.length];
@@ -846,7 +850,7 @@ async function camOpenImg(f){
  $("camTop").textContent="사진 불러오는 중...";$("camSum").innerHTML="";$("camLbl").innerHTML="";$("camSave").disabled=true;
  let bmp;try{bmp=await createImageBitmap(f,{imageOrientation:"from-image"}).catch(()=>createImageBitmap(f))}catch(e){camClose();alert("사진을 열 수 없습니다.");return}
  if(cam!==me)return;
- const ci=$("camI"),sc=Math.min(1,3000/Math.max(bmp.width,bmp.height)); // 아이폰 메모리 한도 때문에 긴 쪽 3000px로
+ const ci=$("camI"),sc=Math.min(1,2600/Math.max(bmp.width,bmp.height)); // 아이폰 메모리 한도 때문에 긴 쪽 2600px로
  ci.width=Math.round(bmp.width*sc);ci.height=Math.round(bmp.height*sc);ci.getContext("2d").drawImage(bmp,0,0,ci.width,ci.height);bmp.close&&bmp.close();
  ci.classList.remove("hidden");camPlaceGuide();camFit();
  if(!window.Tesseract){$("camTop").textContent="자동 인식 엔진을 불러오지 못했습니다(인터넷 필요). 닫고 직접 입력해 주세요.";return}
@@ -869,7 +873,7 @@ $("camI").addEventListener("pointermove",e=>{
 ["pointerup","pointercancel"].forEach(t=>$("camI").addEventListener(t,e=>camPtr.delete(e.pointerId)));
 $("camI").addEventListener("wheel",e=>{if(!cam||!cam.img)return;e.preventDefault();const f=Math.exp(-e.deltaY*0.002);cam.tx=e.clientX-(e.clientX-cam.tx)*f;cam.ty=e.clientY-(e.clientY-cam.ty)*f;cam.z*=f;camImgApply()},{passive:false});
 $("camRot").onclick=()=>{if(!cam||!cam.img)return;const ci=$("camI"),r=rotCanvas(ci,90);ci.width=r.width;ci.height=r.height;ci.getContext("2d").drawImage(r,0,0);freeC(r);camFit()};
-async function camLoop(){const me=cam;
+async function camLoop(){const me=cam;if(!me)return;me.ready=true;
  while(cam===me&&me.on){
   const t0=Date.now();
   try{await camCycle(me)}catch(e){diag.push("cam "+String(e&&e.message||e).slice(0,50))}
@@ -889,14 +893,18 @@ async function camCycle(me){
  if(!me.img){const v=$("camV");if(!v.videoWidth||v.readyState<2)return}
  const F=camGrab();if(!F){me.fails++;return}const pc=F.c;me.n++;let geo=null,p=null,keep=false;
  // ① 하단 코드: 테두리 아래쪽 30% 줄만 잘라서 확대해 읽기 (짝수 회: 밝기 보정, 홀수 회: 이진화로 번갈아)
- const y0=Math.max(0,Math.round(F.top+(PG.h-30)*F.ppm)),sc=Math.min(2.5,Math.max(1,13/F.ppm));
+ const y0=Math.max(0,Math.round(F.top+(PG.h-26)*F.ppm)),sc=Math.min(2.5,Math.max(1,13/F.ppm))*[1,1.25,0.85][Math.floor(me.n/2)%3]; // 회차마다 확대 크기를 조금씩 바꿈(같은 사진도 다르게 읽히도록)
  let st=document.createElement("canvas");st.width=Math.round(pc.width*sc);st.height=Math.max(1,Math.round((pc.height-y0)*sc));
  st.getContext("2d").drawImage(pc,0,y0,pc.width,pc.height-y0,0,0,st.width,st.height);
  const s2=stretch(st,0);freeC(st);st=s2;if(me.n%2===0)binarize(st,4.2*F.ppm*sc,0.12);
  const r=await (await getMrz()).recognize(st,{},{blocks:true,text:true});freeC(st);if(cam!==me){freeC(pc);return}
- const ls=tLines(r.data),pk=mrzPick(ls);
+ const ls=tLines(r.data);let pk=mrzPick(ls),G1=null,G2=null;
+ if(pk){G1=lineGeo(ls[pk.i],sc,y0);G2=lineGeo(ls[pk.i+1],sc,y0)}
+ if(pk&&!(pk.p.okNo&&pk.p.okDob&&pk.p.score>=4)){ // 2줄 위치는 찾았는데 글자가 잘리거나 틀림 → 2줄만 바르게 세워 가로 전체를 크게 다시 읽기
+  const R=await camMrzRefine(me,pc,G1,G2);if(cam!==me){freeC(pc);return}if(R){pk={p:R.p};G1=R.g1;G2=R.g2}
+ }
  if(pk&&pk.p.okNo&&pk.p.okDob&&pk.p.score>=4){p=pk.p; // 검증번호 2개 이상 맞아야 채택(우연한 오인식 방지)
-  const g1=lineGeo(ls[pk.i],sc,y0),g2=lineGeo(ls[pk.i+1],sc,y0),ang=Math.abs(g2.ang)<0.35?g2.ang:0,len=Math.max(g1.w,g2.w)/Math.cos(ang);
+  const g1=G1,g2=G2,ang=Math.abs(g2.ang)<0.35?g2.ang:0,len=Math.max(g1.w,g2.w)/Math.cos(ang);
   const ppm=len/110,u={x:Math.cos(ang),y:Math.sin(ang)},vv={x:-Math.sin(ang),y:Math.cos(ang)},L={x:g2.cx-u.x*len/2,y:g2.cy-u.y*len/2};
   geo={ppm,ang,at:(mx,mu)=>({x:L.x+u.x*mx*ppm-vv.x*mu*ppm,y:L.y+u.y*mx*ppm-vv.y*mu*ppm})};
   const key=[p.no,p.dob,p.sex,p.nat].join("|"),m=me.mrz[key]||(me.mrz[key]={p,n:0});m.n++;if(p.score>m.p.score)m.p=p;
@@ -922,6 +930,16 @@ async function camCycle(me){
  if(geo){const q=p.score*10+(koHit?5:0)+(p.okName?2:0);if(!me.best||q>me.best.q){if(me.best)freeC(me.best.c);me.best={c:pc,geo,q};keep=true}}
  if(!keep)freeC(pc);
 }
+async function camMrzRefine(me,pc,g1,g2){
+ const ang=Math.abs(g2.ang)<0.35?g2.ang:0,d=Math.max(Math.hypot(g2.cx-g1.cx,g2.cy-g1.cy),g2.h*1.5),cy=(g1.cy+g2.cy)/2,cx=pc.width/2;
+ const sc2=Math.min(3,Math.max(0.6,85/d)),W=pc.width*1.02,H=d*2.4;
+ let c=stretch(cropRot(pc,cx,cy,W,H,ang,sc2),0);if(me.n%2)binarize(c,d*sc2*0.9,0.1);
+ const r=await (await getMrz()).recognize(c,{},{blocks:true,text:true});const cw=c.width,ch=c.height;freeC(c);
+ const ls=tLines(r.data),pk=mrzPick(ls);if(!pk||!(pk.p.okNo&&pk.p.okDob&&pk.p.score>=4))return null;
+ const back=l=>{const g=lineGeo(l,1,0),X=(g.cx-cw/2)/sc2,Y=(g.cy-ch/2)/sc2,co=Math.cos(ang),si=Math.sin(ang); // 잘라낸 그림 좌표 → 원래 좌표
+  return{cx:cx+X*co-Y*si,cy:cy+X*si+Y*co,w:g.w/sc2,h:g.h/sc2,ang:ang+g.ang}};
+ return{p:pk.p,g1:back(ls[pk.i]),g2:back(ls[pk.i+1])};
+}
 function camBestMrz(me){let b=null;for(const m of Object.values(me.mrz))if(!b||m.n*2+m.p.score>b.n*2+b.p.score)b=m;return b}
 function camNames(me){const B=camBestMrz(me);return me.names.length?me.names:(B&&B.p.en?[B.p.en]:[])}
 function camVals(me){
@@ -939,6 +957,7 @@ function camDraw(){
  if(!V)msg=me.img?"한 손가락으로 사진을 옮기고, 두 손가락으로 벌려서 여권 사진면을 노란 테두리에 맞춰 주세요":me.n<2?"여권 사진면을 노란 테두리에 꽉 맞춰 주세요":"아래 영문·숫자 2줄이 아직 안 읽힙니다. 테두리에 맞추고, 빛 반사가 없게 각도를 조금씩 바꿔 보세요";
  else{allOk=Object.values(V.f).every(x=>x[1]||(x===V.f.pKo&&V.p.nat!=="KOR"));
   msg=allOk?(me.img?"✓ 모두 읽었습니다. 여권 글씨와 같으면 [확인]":"✓ 모두 읽었습니다. 여권 글씨와 같으면 [이 값으로 저장]"):!V.f.pKo[1]&&V.p.nat==="KOR"?"한글 이름 읽는 중... 한글 이름에 반사가 없게 해 주세요":"한 번 더 확인 중... 그대로 잠시 들고 계세요"}
+ if(!me.ready)msg="인식 엔진 준비 중... (처음엔 30초 정도 걸릴 수 있음)";else if(!allOk&&me.n)msg+=` · ${me.n}번째 읽는 중`; // 계속 읽고 있다는 표시
  $("camTop").textContent=msg;$("camGuide").classList.toggle("ok",allOk);$("camSave").disabled=!V;
  // 아래 요약표
  const NM={pKo:"한글 이름",sur:"영문 성",giv:"영문 이름",pNat:"국적",pNo:"여권번호",pSex:"성별",pDob:"생년월일"};
@@ -949,13 +968,13 @@ function camDraw(){
  const pos=(mx,mu)=>{if(live){const q=L.geo.at(mx,mu),M=L.map;return{x:(M.sx+q.x/M.k)*G.s+G.ox,y:(M.sy+q.y/M.k)*G.s+G.oy}}
   return{x:G.gx+(PG.lx+mx)*m,y:G.gy+(PG.ly-mu)*m}};
  $("camLbl").innerHTML=Object.entries(LAY[V.lay]).map(([k,[mx,mu,md]])=>{const x=V.f[k];if(!x||!x[0])return"";
-  const q=md==="L"?pos(mx-1.5,mu):md==="R"?pos(mx+3,mu):pos(mx,mu-2.2),tf=md==="L"?"translate(-100%,-50%)":md==="R"?"translate(0,-50%)":"translate(0,0)";
+  const q=md==="L"?pos(mx-1.5,mu):md==="R"?pos(mx+3,mu):pos(mx,mu-5),tf=md==="L"?"translate(-100%,-50%)":md==="R"?"translate(0,-50%)":"translate(0,0)";
   return`<div class="cl${x[1]?" ok":""}" style="left:${q.x.toFixed(1)}px;top:${q.y.toFixed(1)}px;font-size:${fs.toFixed(1)}px;transform:${tf}">${esc(x[0])}</div>`}).join("");
 }
 window.addEventListener("resize",()=>cam&&camPlaceGuide());
 document.addEventListener("visibilitychange",()=>{if(document.hidden&&cam)camClose()});
 $("camClose").onclick=camClose;
-$("camReset").onclick=()=>{if(!cam)return;if(cam.best)freeC(cam.best.c);Object.assign(cam,{mrz:{},names:[],kos:{},best:null,last:null,fails:0});camDraw()};
+$("camReset").onclick=()=>{if(!cam)return;if(cam.best)freeC(cam.best.c);Object.assign(cam,{mrz:{},names:[],kos:{},best:null,last:null,fails:0,n:0});camDraw();$("camTop").textContent="처음부터 다시 읽습니다..."};
 $("camSave").onclick=async()=>{
  const me=cam;if(!me)return;const V=camVals(me),b=me.best;if(!V||!b)return;
  me.on=false;me.best=null;camClose();

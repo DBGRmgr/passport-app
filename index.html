@@ -86,6 +86,7 @@ button:disabled{opacity:.5}
 .ppe{width:auto!important;margin:6px 0 0!important;padding:8px 14px!important;font-size:14px!important;background:#fff!important;color:#1b5e20!important;border:1px solid #1b5e20!important}
 #cam{position:fixed;inset:0;background:#000;z-index:70;overflow:hidden}
 #camV{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+#camI{position:absolute;left:0;top:0;transform-origin:0 0;touch-action:none}
 #camGuide{position:absolute;border:3px solid #ffeb3b;border-radius:10px;box-shadow:0 0 0 9999px #0008;pointer-events:none}
 #camGuide.ok{border-color:#4caf50}
 #camLbl{position:absolute;inset:0;pointer-events:none}
@@ -233,12 +234,12 @@ button:disabled{opacity:.5}
 
 </main>
 <div id="cam" class="hidden">
- <video id="camV" playsinline muted autoplay></video>
+ <video id="camV" playsinline muted autoplay></video><canvas id="camI" class="hidden"></canvas>
  <div id="camGuide"></div><div id="camLbl"></div>
  <div id="camTop">카메라 준비 중...</div>
  <div id="camBot">
   <div id="camSum"></div>
-  <div class="row"><button id="camClose" class="sec">닫기</button><button id="camReset" class="sec">다시 읽기</button><button id="camSave" disabled>이 값으로 저장</button></div>
+  <div class="row"><button id="camClose" class="sec">닫기</button><button id="camRot" class="sec hidden">↻ 회전</button><button id="camReset" class="sec">다시 읽기</button><button id="camSave" disabled>이 값으로 저장</button></div>
  </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
@@ -430,22 +431,7 @@ function startPerson(){
 }
 $("bShot").onclick=()=>{if(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia)camOpen();else $("fFile").click()};
 $("bShotOld").onclick=()=>$("fFile").click();
-$("fFile").onchange=async e=>{
- const f=e.target.files[0];if(!f)return;
- shotAt=new Date();keepPhoto="";keepPass="";keepThumb="";$("pCropOld").classList.add("hidden");curUpd=null;curRej=[];curOld=null;clearHints();
- FIELDS.forEach(id=>{delete $(id).dataset.touched});
- $("pOcr").textContent="사진 처리 중...";
- diag=[];const bmp=await createImageBitmap(f,{imageOrientation:"from-image"}).catch(()=>{diag.push("방향옵션X");return createImageBitmap(f)});
- diag.push(`파일 ${f.type||"?"} ${Math.round(f.size/1024)}KB ${bmp.width}x${bmp.height}`);
- const sc=Math.min(1,2000/Math.max(bmp.width,bmp.height));bmp.close&&setTimeout(()=>bmp.close(),0);
- srcCanvas.width=Math.round(bmp.width*sc);srcCanvas.height=Math.round(bmp.height*sc);
- srcCanvas.getContext("2d").drawImage(bmp,0,0,srcCanvas.width,srcCanvas.height);
- hasPhoto=true;$("bShot").textContent="다시 촬영";
- FIELDS.forEach(id=>{$(id).value="";setLock(id,true)});
- ["pCrop","pForm","pBar"].forEach(x=>$(x).classList.remove("hidden"));
- await autoCrop();
- runOCR(++ocrToken);
-};
+$("fFile").onchange=e=>{const f=e.target.files[0];e.target.value="";if(f)camOpenImg(f)};
 
 /* 얼굴 크롭 */
 const box=$("cropBox");let bx=0.05,by=0.3,bw=0.28;
@@ -773,8 +759,8 @@ async function runOCR2(tok){
    msg[0]=mrz.okNo?'<span class="ok">① 국적·여권번호·성별·생년월일·영문이름 인식 완료</span>':'<span class="err">① 여권번호 검증 실패, 꼭 확인하세요</span>';
    $("pCheck").textContent=mrz.okDob?"":"생년월일 검증 실패 가능성 있음, 확인하세요.";
    if(!faceFound)geoCrop();
-  }else{mrz=null;msg[0]='<span class="err">① 하단 코드를 읽지 못했습니다. 여권 사진면을 화면 가득, 반사 없이 다시 찍어 주세요.</span>'+diagHtml()}
- }catch(e){diag.push("오류 "+String(e&&e.message||e).slice(0,60));msg[0]="① 코드 인식 실패. 직접 입력하세요."+diagHtml()}
+  }else{mrz=null;msg[0]='<span class="err">① 하단 코드를 읽지 못했습니다. 여권 사진면을 화면 가득, 반사 없이 다시 찍어 주세요.</span>'}
+ }catch(e){diag.push("오류 "+String(e&&e.message||e).slice(0,60));msg[0]="① 코드 인식 실패. 직접 입력하세요."}
  say();
  try{
   msg[1]="② 한글 이름 읽는 중... (처음엔 30초 이상 걸릴 수 있음)";say();
@@ -818,9 +804,9 @@ const LAY={ // 각 칸 글씨 위치 (하단 코드 2번째 줄 왼쪽 끝 기�
  old:{pNo:[76,61.6],sur:[36,55.8],giv:[36,50.4],pNat:[36,44.9],pDob:[36,39.2],pSex:[36,33],pKo:[73,21]}};
 let cam=null;
 const camLayout=no=>/^[A-Z]\d{3}[A-Z]\d{4}$/.test(no||"")?"new":/^[A-Z]\d{8}$/.test(no||"")?"old":null;
-function camGeom(){return cam&&cam.G||camCalc()}
+function camGeom(){const G=cam&&cam.G||camCalc();return cam&&cam.img?{...G,s:cam.z,ox:cam.tx,oy:cam.ty}:G}
 function camCalc(){
- const v=$("camV"),ew=v.clientWidth,eh=v.clientHeight,vw=v.videoWidth||1,vh=v.videoHeight||1;
+ const v=$("camV"),ew=$("cam").clientWidth,eh=$("cam").clientHeight,vw=v.videoWidth||1,vh=v.videoHeight||1;
  const s=Math.max(ew/vw,eh/vh),ox=(ew-vw*s)/2,oy=(eh-vh*s)/2;
  const top=$("camTop").offsetHeight+8,avH=eh-top-$("camBot").offsetHeight-8;
  const gw=Math.max(100,Math.min(ew*0.94,avH*PG.w/PG.h)),gh=gw*PG.h/PG.w,gx=(ew-gw)/2,gy=top+Math.max(0,(avH-gh)/2);
@@ -843,7 +829,38 @@ async function camOpen(){
  try{await getMrz();getKor().catch(()=>{})}catch(e){}
  camLoop();
 }
-function camClose(){const c=cam;cam=null;if(c){c.on=false;if(c.stream)c.stream.getTracks().forEach(t=>t.stop());if(c.best)freeC(c.best.c)}$("camV").srcObject=null;$("cam").classList.add("hidden")}
+function camClose(){const c=cam;cam=null;if(c){c.on=false;if(c.stream)c.stream.getTracks().forEach(t=>t.stop());if(c.best)freeC(c.best.c)}$("camV").srcObject=null;$("cam").classList.add("hidden");
+ const ci=$("camI");ci.width=ci.height=0;ci.classList.add("hidden");$("camV").classList.remove("hidden");$("camRot").classList.add("hidden");$("camSave").textContent="이 값으로 저장";camPtr.clear()}
+/* 앨범 사진: 같은 테두리 화면에서 손가락으로 사진을 옮기고(한 손가락) 확대·축소(두 손가락)해서 여권을 테두리에 맞춤 */
+async function camOpenImg(f){
+ cam={on:true,n:0,mrz:{},names:[],kos:{},best:null,last:null,fails:0,img:true,z:1,tx:0,ty:0};const me=cam;
+ $("cam").classList.remove("hidden");$("camV").classList.add("hidden");$("camRot").classList.remove("hidden");$("camSave").textContent="확인";
+ $("camTop").textContent="사진 불러오는 중...";$("camSum").innerHTML="";$("camLbl").innerHTML="";$("camSave").disabled=true;
+ let bmp;try{bmp=await createImageBitmap(f,{imageOrientation:"from-image"}).catch(()=>createImageBitmap(f))}catch(e){camClose();alert("사진을 열 수 없습니다.");return}
+ if(cam!==me)return;
+ const ci=$("camI"),sc=Math.min(1,3000/Math.max(bmp.width,bmp.height)); // 아이폰 메모리 한도 때문에 긴 쪽 3000px로
+ ci.width=Math.round(bmp.width*sc);ci.height=Math.round(bmp.height*sc);ci.getContext("2d").drawImage(bmp,0,0,ci.width,ci.height);bmp.close&&bmp.close();
+ ci.classList.remove("hidden");camPlaceGuide();camFit();
+ if(!window.Tesseract){$("camTop").textContent="자동 인식 엔진을 불러오지 못했습니다(인터넷 필요). 닫고 직접 입력해 주세요.";return}
+ $("camTop").textContent="인식 엔진 준비 중...";
+ try{await getMrz();getKor().catch(()=>{})}catch(e){}
+ camLoop();
+}
+function camFit(){const ci=$("camI"),G=cam.G||camCalc(),ew=$("cam").clientWidth;cam.z=ew/ci.width;cam.tx=0;cam.ty=G.gy+G.gh/2-ci.height*cam.z/2;camImgApply()}
+function camImgApply(){if(!cam||!cam.img)return;$("camI").style.transform=`translate(${cam.tx}px,${cam.ty}px) scale(${cam.z})`;camDraw()}
+const camPtr=new Map();
+$("camI").addEventListener("pointerdown",e=>{camPtr.set(e.pointerId,{x:e.clientX,y:e.clientY});try{$("camI").setPointerCapture(e.pointerId)}catch(x){}e.preventDefault()});
+$("camI").addEventListener("pointermove",e=>{
+ if(!cam||!cam.img||!camPtr.has(e.pointerId))return;const pv=camPtr.get(e.pointerId),cu={x:e.clientX,y:e.clientY};camPtr.set(e.pointerId,cu);
+ if(camPtr.size===1){cam.tx+=cu.x-pv.x;cam.ty+=cu.y-pv.y}
+ else{const o=[...camPtr.entries()].find(([k])=>k!==e.pointerId)[1],d0=Math.hypot(pv.x-o.x,pv.y-o.y),d1=Math.hypot(cu.x-o.x,cu.y-o.y);
+  if(d0>5){const f=Math.max(0.2,Math.min(30/cam.z,d1/d0)),m0={x:(pv.x+o.x)/2,y:(pv.y+o.y)/2},m1={x:(cu.x+o.x)/2,y:(cu.y+o.y)/2};
+   cam.tx=m1.x-(m0.x-cam.tx)*f;cam.ty=m1.y-(m0.y-cam.ty)*f;cam.z*=f}}
+ camImgApply();e.preventDefault();
+});
+["pointerup","pointercancel"].forEach(t=>$("camI").addEventListener(t,e=>camPtr.delete(e.pointerId)));
+$("camI").addEventListener("wheel",e=>{if(!cam||!cam.img)return;e.preventDefault();const f=Math.exp(-e.deltaY*0.002);cam.tx=e.clientX-(e.clientX-cam.tx)*f;cam.ty=e.clientY-(e.clientY-cam.ty)*f;cam.z*=f;camImgApply()},{passive:false});
+$("camRot").onclick=()=>{if(!cam||!cam.img)return;const ci=$("camI"),r=rotCanvas(ci,90);ci.width=r.width;ci.height=r.height;ci.getContext("2d").drawImage(r,0,0);freeC(r);camFit()};
 async function camLoop(){const me=cam;
  while(cam===me&&me.on){
   const t0=Date.now();
@@ -853,16 +870,16 @@ async function camLoop(){const me=cam;
  }
 }
 function camGrab(){ // 테두리 안(+여유 8%) 화면을 잘라서 캔버스로
- const v=$("camV"),G=camGeom(),mg=0.08;
+ const v=cam&&cam.img?$("camI"):$("camV"),vw=v.videoWidth||v.width,vh=v.videoHeight||v.height,G=camGeom(),mg=0.08;
  let sx=(G.gx-G.gw*mg-G.ox)/G.s,sy=(G.gy-G.gh*mg-G.oy)/G.s,sw=G.gw*(1+2*mg)/G.s,sh=G.gh*(1+2*mg)/G.s;
- sx=Math.max(0,sx);sy=Math.max(0,sy);sw=Math.min(v.videoWidth-sx,sw);sh=Math.min(v.videoHeight-sy,sh);
+ sx=Math.max(0,sx);sy=Math.max(0,sy);sw=Math.min(vw-sx,sw);sh=Math.min(vh-sy,sh);if(sw<50||sh<50)return null;
  const k=Math.min(1,1800/sw),c=document.createElement("canvas");c.width=Math.round(sw*k);c.height=Math.round(sh*k);
  c.getContext("2d").drawImage(v,sx,sy,sw,sh,0,0,c.width,c.height);
  return{c,map:{sx,sy,k,G},ppm:G.gw/G.s*k/PG.w,top:((G.gy-G.oy)/G.s-sy)*k};
 }
 async function camCycle(me){
- const v=$("camV");if(!v.videoWidth||v.readyState<2)return;
- const F=camGrab(),pc=F.c;me.n++;let geo=null,p=null,keep=false;
+ if(!me.img){const v=$("camV");if(!v.videoWidth||v.readyState<2)return}
+ const F=camGrab();if(!F){me.fails++;return}const pc=F.c;me.n++;let geo=null,p=null,keep=false;
  // ① 하단 코드: 테두리 아래쪽 30% 줄만 잘라서 확대해 읽기 (짝수 회: 밝기 보정, 홀수 회: 이진화로 번갈아)
  const y0=Math.max(0,Math.round(F.top+(PG.h-30)*F.ppm)),sc=Math.min(2.5,Math.max(1,13/F.ppm));
  let st=document.createElement("canvas");st.width=Math.round(pc.width*sc);st.height=Math.max(1,Math.round((pc.height-y0)*sc));
@@ -908,9 +925,9 @@ function camDraw(){
  const me=cam;if(!me)return;const V=camVals(me),G=camGeom();
  // 상태 안내
  let msg,allOk=false;
- if(!V)msg=me.n<2?"여권 사진면을 노란 테두리에 꽉 맞춰 주세요":"아래 영문·숫자 2줄이 아직 안 읽힙니다. 테두리에 맞추고, 빛 반사가 없게 각도를 조금씩 바꿔 보세요";
+ if(!V)msg=me.img?"한 손가락으로 사진을 옮기고, 두 손가락으로 벌려서 여권 사진면을 노란 테두리에 맞춰 주세요":me.n<2?"여권 사진면을 노란 테두리에 꽉 맞춰 주세요":"아래 영문·숫자 2줄이 아직 안 읽힙니다. 테두리에 맞추고, 빛 반사가 없게 각도를 조금씩 바꿔 보세요";
  else{allOk=Object.values(V.f).every(x=>x[1]||(x===V.f.pKo&&V.p.nat!=="KOR"));
-  msg=allOk?"✓ 모두 읽었습니다. 여권 글씨와 같으면 [이 값으로 저장]":!V.f.pKo[1]&&V.p.nat==="KOR"?"한글 이름 읽는 중... 한글 이름에 반사가 없게 해 주세요":"한 번 더 확인 중... 그대로 잠시 들고 계세요"}
+  msg=allOk?(me.img?"✓ 모두 읽었습니다. 여권 글씨와 같으면 [확인]":"✓ 모두 읽었습니다. 여권 글씨와 같으면 [이 값으로 저장]"):!V.f.pKo[1]&&V.p.nat==="KOR"?"한글 이름 읽는 중... 한글 이름에 반사가 없게 해 주세요":"한 번 더 확인 중... 그대로 잠시 들고 계세요"}
  $("camTop").textContent=msg;$("camGuide").classList.toggle("ok",allOk);$("camSave").disabled=!V;
  // 아래 요약표
  const NM={pKo:"한글 이름",sur:"영문 성",giv:"영문 이름",pNat:"국적",pNo:"여권번호",pSex:"성별",pDob:"생년월일"};
@@ -918,7 +935,7 @@ function camDraw(){
  // 여권 위 각 칸 위치에 글씨 겹쳐 표시
  if(!V||!V.lay){$("camLbl").innerHTML="";return}
  const L=me.last,live=L&&L.geo&&me.n-L.n<=1,m=G.gw/PG.w,fs=Math.max(12,Math.min(20,3.4*m));
- const pos=(mx,mu)=>{if(live){const q=L.geo.at(mx,mu),M=L.map;return{x:(M.sx+q.x/M.k)*M.G.s+M.G.ox,y:(M.sy+q.y/M.k)*M.G.s+M.G.oy}}
+ const pos=(mx,mu)=>{if(live){const q=L.geo.at(mx,mu),M=L.map;return{x:(M.sx+q.x/M.k)*G.s+G.ox,y:(M.sy+q.y/M.k)*G.s+G.oy}}
   return{x:G.gx+(PG.lx+mx)*m,y:G.gy+(PG.ly-mu)*m}};
  $("camLbl").innerHTML=Object.entries(LAY[V.lay]).map(([k,[mx,mu]])=>{const x=V.f[k];if(!x||!x[0])return"";const q=pos(mx,mu+1.6);
   return`<div class="cl${x[1]?" ok":""}" style="left:${q.x.toFixed(1)}px;top:${q.y.toFixed(1)}px;font-size:${fs.toFixed(1)}px">${esc(x[0])}</div>`}).join("");
